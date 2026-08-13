@@ -1,6 +1,6 @@
 {
-	"name": "Morganite",
-	"description": "Injects emojis natively, provides a custom Emoji Store button, and handles stealing safely.",
+	"name": "user-emojis",
+	"description": "Injects emojis natively, adds provides a custom Emoji Store. Add emojis from packs or steal from others!",
 	"authors": [
 		{
 			"name": "_morganite",

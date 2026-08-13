@@ -16,7 +16,7 @@ import { isDev, previewLang } from "./lib/common.ts";
 import { fixPluginLangs, makeLangDefs } from "./modules/lang.ts";
 import { buildPlugin, listPlugins, workerResolves, workers } from "./modules/plugins.ts";
 
-// Pass the target plugin name via CLI: e.g. `tsx build.ts my-plugin`
+// Read the targeted plugin from CLI args (e.g. `tsx build.ts "user-emojis"`)
 const targetPlugin = argv[2];
 
 logDebug("Booting up Workers");
@@ -41,34 +41,48 @@ await (() =>
 
 const offset = performance.now();
 
-// Write lang files
+// 1. Write lang files
 
 const writePluginLangFiles = bench();
 logHeader("Writing plugin lang files");
 
 await Promise.all([
     runTask(`Wrote ${highlight("defs.d.ts")} types file`, makeLangDefs()),
-    // Pass targetPlugin so only that plugin's translations get fixed
     runTask(`Fixed ${highlight("plugin translation")} files`, fixPluginLangs(targetPlugin)),
 ]);
 
 logFinished("writing plugin lang files", writePluginLangFiles.stop());
 
-// Build plugins
+// 2. Build targeted plugin(s)
 
 const buildingPlugins = bench();
 logHeader("Building plugins");
 
 const allPlugins = await listPlugins();
+
+// Robust matching: Check plugin folder path, manifest ID, or name
 const pluginsToBuild = targetPlugin 
-    ? allPlugins.filter(p => (typeof p === "string" ? p : p.name) === targetPlugin)
+    ? allPlugins.filter(p => {
+        const name = typeof p === "string" ? p : p.name;
+        const id = typeof p === "string" ? p : (p.id || p.dir || p.path);
+        
+        const target = targetPlugin.toLowerCase();
+        return (
+            name?.toLowerCase() === target ||
+            id?.toLowerCase().endsWith(target) ||
+            id?.toLowerCase() === target
+        );
+    })
     : allPlugins;
 
 if (targetPlugin && pluginsToBuild.length === 0) {
-    console.warn(`⚠️ Warning: Plugin "${targetPlugin}" was not found.`);
+    console.warn(`\n⚠️  Warning: Could not find plugin matching "${targetPlugin}". Available plugins:`);
+    console.warn(allPlugins.map(p => typeof p === "string" ? p : p.name).join(", "));
+} else {
+    for (const plugin of pluginsToBuild) {
+        buildPlugin(plugin);
+    }
 }
-
-for (const plugin of pluginsToBuild) buildPlugin(plugin);
 
 await (() =>
     new Promise<void>((res, rej) => {
@@ -77,6 +91,8 @@ await (() =>
     }))();
 
 logFinished("building plugins", buildingPlugins.stop());
+
+// README writing section completely omitted
 
 logCompleted(Math.floor(performance.now() - offset));
 

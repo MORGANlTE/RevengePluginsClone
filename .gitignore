@@ -1,4 +1,7 @@
-dist
+# Ignore everything in dist EXCEPT the user-emojis folder
+dist/*
+!dist/user-emojis/
+
 node_modules
 .actrc
 yarn.lock
