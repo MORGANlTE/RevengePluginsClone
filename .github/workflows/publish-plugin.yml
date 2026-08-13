@@ -1,0 +1,65 @@
+name: Build and deploy plugin to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'src/plugins/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'yarn.lock'
+      - '.github/workflows/**'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then npm ci; elif [ -f yarn.lock ]; then yarn --frozen-lockfile; else npm install; fi
+
+      - name: Build (if script exists)
+        run: |
+          if npm run | grep -q " build"; then npm run build; else echo "No build script defined; skipping build step"; fi
+
+      - name: Prepare public directory for Pages
+        run: |
+          rm -rf public || true
+          mkdir -p public
+          # Copy common build outputs into public. Adjust if your project uses a different output directory.
+          if [ -d dist ]; then cp -a dist/. public/; fi
+          if [ -d build ]; then cp -a build/. public/; fi
+          # If your plugin is just static files under src/plugins, expose them under a folder so you can access them via Pages
+          if [ -d src/plugins ]; then cp -a src/plugins/. public/plugins/; fi
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v3
+
+      - name: Upload artifact for Pages
+        uses: actions/upload-pages-artifact@v1
+        with:
+          path: public
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v1
