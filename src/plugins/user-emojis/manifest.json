@@ -1,0 +1,14 @@
+{
+	"name": "Morganite",
+	"description": "Injects emojis natively, provides a custom Emoji Store button, and handles stealing safely.",
+	"authors": [
+		{
+			"name": "_morganite",
+			"id": "405067444764540928"
+		}
+	],
+	"main": "src/index.tsx",
+	"vendetta": {
+		"icon": "UserCircleIcon"
+	}
+}
