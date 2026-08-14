@@ -35,27 +35,6 @@ async function buildPlugin(
 	})`;
 
 	await mkdir(join("dist", plugin), { recursive: true });
-	await dprint.saveAndFormat(
-		join("dist", plugin, "index.md"),
-		[
-			"---",
-			`title: ${title}`,
-			`description: ${manifest.description}`,
-			"---\n",
-
-			`${mdNote}\n`,
-
-			// header
-			"<div align=\"center\">",
-			`<h1>${title}</h1>`,
-			`<h3>${manifest.description}</h3>`,
-			// footer
-			"</div>\n",
-
-			"> **Note**",
-			`> This is a landing page for the plugin **${manifest.name}**. The proper way to install this plugin is going to Revenge's Plugins page and adding it there.`,
-		].join("\n"),
-	);
 
 	let langDefault: object | null = null;
 	let langValues: object | null = null;
@@ -74,7 +53,6 @@ async function buildPlugin(
 
 	await build({
 		entryPoints: [join("src/plugins", plugin, manifest.main)],
-		inject: ["scripts/build/modules/workers/migration-shim.ts"],
 		bundle: true,
 		outfile: join("dist", plugin, "index.js"),
 		format: "iife",
@@ -105,15 +83,15 @@ async function buildPlugin(
 			".json": "json",
 		},
 		globalName: "$",
-		banner: { js: "(()=>{" },
-		footer: { js: "return $;})();" },
+		banner: { js: "(()=>{try{" },
+		footer: { js: "}catch(e){console.error('Plugin Error:',e);return undefined;}return $;})();" },
 		plugins: [
 			{
 				// based on eslint-plugin-globals
 				name: "vendetta",
 				setup(build) {
 					build.onResolve(
-						{ filter: /^@vendetta\/?/ },
+						{ filter: /^@(vendetta|revenge)\/?/ },
 						({ path }) => ({
 							path,
 							namespace: "vendetta",
@@ -122,7 +100,7 @@ async function buildPlugin(
 					build.onLoad(
 						{ filter: /.*/, namespace: "vendetta" },
 						({ path }) => ({
-							contents: `module.exports = ${path.slice(1).replace(/\//g, ".")}`,
+							contents: `module.exports = (typeof revenge !== "undefined" ? revenge : vendetta)${path.replace(/^@(vendetta|revenge)/, "").replace(/\//g, ".")}`,
 							loader: "js",
 						}),
 					);

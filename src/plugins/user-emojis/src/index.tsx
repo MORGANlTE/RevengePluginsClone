@@ -318,8 +318,8 @@ export function onLoad() {
     const ChatInputGuardWrapper = findByName("ChatInputGuardWrapper", false);
     if (ChatInputGuardWrapper) {
         patches.push(after("default", ChatInputGuardWrapper, (_, ret) => {
-            const children = findInReactTree(ret, x => x?.type?.displayName === "View" && Array.isArray(x?.props?.children))?.props?.children;
-            if (!children) return;
+            const children = ret?.props?.children;
+            if (!children || !Array.isArray(children)) return;
 
             const EmojiStoreButton = () => {
                 const [visible, setVisible] = React.useState(false);

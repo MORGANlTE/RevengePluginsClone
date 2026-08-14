@@ -48,7 +48,7 @@ logHeader("Writing plugin lang files");
 
 await Promise.all([
     runTask(`Wrote ${highlight("defs.d.ts")} types file`, makeLangDefs()),
-    runTask(`Fixed ${highlight("plugin translation")} files`, fixPluginLangs(targetPlugin)),
+    runTask(`Fixed ${highlight("plugin translation")} files`, fixPluginLangs(targetPlugin ? [targetPlugin] : [])),
 ]);
 
 logFinished("writing plugin lang files", writePluginLangFiles.stop());
@@ -64,7 +64,7 @@ const allPlugins = await listPlugins();
 const pluginsToBuild = targetPlugin 
     ? allPlugins.filter(p => {
         const name = typeof p === "string" ? p : p.name;
-        const id = typeof p === "string" ? p : (p.id || p.dir || p.path);
+        const id = typeof p === "string" ? p : ((p as any).id || (p as any).dir || (p as any).path);
         
         const target = targetPlugin.toLowerCase();
         return (
