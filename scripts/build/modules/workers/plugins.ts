@@ -100,7 +100,7 @@ async function buildPlugin(
 					build.onLoad(
 						{ filter: /.*/, namespace: "vendetta" },
 						({ path }) => ({
-							contents: `module.exports = (window.revenge || window.vendetta)${path.replace(/^@(vendetta|revenge)/, "").replace(/\//g, ".")}`,
+							contents: `module.exports = (typeof revenge !== "undefined" ? revenge : vendetta)${path.replace(/^@(vendetta|revenge)/, "").replace(/\//g, ".")}`,
 							loader: "js",
 						}),
 					);
