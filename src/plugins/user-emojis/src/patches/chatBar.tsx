@@ -57,20 +57,51 @@ export function patchChatBar(): () => void {
         }
     }
 
-    // 1. ChatView Tree Hook for chatInputRef capture
+    // 1. Primary ChatView Tree Patch: Mounts LiveMessagePreview right above the bottom Chatbar
     const ChatView = findByTypeName("ChatView");
     if (ChatView) {
         unpatches.push(
             after("type", ChatView, ([props], ret) => {
                 const inputRef = props?.chatInputRef;
                 if (inputRef) hookInputRef(inputRef);
-                return ret;
+
+                const previewElem = React.createElement(LiveMessagePreview, {
+                    key: "user-emoji-live-preview",
+                    inputProps: inputRef,
+                });
+
+                if (ret && Array.isArray(ret.props?.children)) {
+                    // Find the ChatInput / ChatAccessories index and insert LiveMessagePreview immediately above it
+                    const chatInputIndex = ret.props.children.findIndex(
+                        (c: any) =>
+                            c?.type?.displayName === "ChatAccessories" ||
+                            c?.type?.name === "ChatAccessories" ||
+                            c?.type?.displayName === "ChatInput" ||
+                            c?.props?.chatInputRef
+                    );
+
+                    if (chatInputIndex !== -1) {
+                        ret.props.children.splice(chatInputIndex, 0, previewElem);
+                        return ret;
+                    }
+
+                    // Insert before the last element (Chatbar is the bottom element)
+                    ret.props.children.splice(ret.props.children.length - 1, 0, previewElem);
+                    return ret;
+                }
+
+                return React.createElement(
+                    RN.View,
+                    { style: { flex: 1 } },
+                    ret,
+                    previewElem
+                );
             })
         );
-        logStatus("Patched ChatView for input reference");
+        logStatus("Patched ChatView to mount LiveMessagePreview right above chatbar");
     }
 
-    // 2. ChatInputGuardWrapper: Mounts LiveMessagePreview right above chatbar & injects 💎 button
+    // 2. ChatInputGuardWrapper: Injects 💎 button & captures chatInputRef
     const ChatInputGuardWrapper = findByName("ChatInputGuardWrapper", false);
     if (ChatInputGuardWrapper) {
         unpatches.push(
@@ -79,15 +110,6 @@ export function patchChatBar(): () => void {
 
                 const inputRef = extractChatInputRef(ret);
                 if (inputRef) hookInputRef(inputRef);
-
-                // Mount LiveMessagePreview right above the chat input box
-                if (Array.isArray(ret.props.children)) {
-                    if (!ret.props.children.some((c: any) => c?.key === "user-emoji-live-preview")) {
-                        ret.props.children.unshift(
-                            React.createElement(LiveMessagePreview, { key: "user-emoji-live-preview", inputProps: inputRef })
-                        );
-                    }
-                }
 
                 const btn = (
                     <RN.TouchableOpacity
@@ -130,7 +152,7 @@ export function patchChatBar(): () => void {
                 }
             })
         );
-        logStatus("Patched ChatInputGuardWrapper with LiveMessagePreview and 💎 button");
+        logStatus("Patched ChatInputGuardWrapper for 💎 button injection");
     }
 
     // 3. Injects into "+" Attachment Sheet Actions (useChatInputActions)

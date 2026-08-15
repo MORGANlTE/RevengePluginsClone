@@ -53,7 +53,7 @@ export default function LiveMessagePreview({ inputProps }: { inputProps?: any })
         const emojiMap = new Map<string, AppEmoji>(loaded.map((e: AppEmoji) => [e.name.toLowerCase(), e]));
         const result: Token[] = [];
 
-        // Single pass regex for <a:name:id>, :name:, ;name;
+        // Regex for <a:name:id>, :name:, ;name;
         const regex = /(<a?:([A-Za-z0-9_]+):(\d+)>)|:([A-Za-z0-9_]+):|;([A-Za-z0-9_]+);/g;
         let lastIndex = 0;
         let match: RegExpExecArray | null;
@@ -110,13 +110,13 @@ export default function LiveMessagePreview({ inputProps }: { inputProps?: any })
         return nonEmojiText.length === 0 && emojiCount > 0 && emojiCount <= 8;
     }, [tokens]);
 
-    // Dynamic sizing: 48px for 1 emoji, 40px for 2-3 emojis, 22px for inline with text
+    // Dynamic sizing: 56px for 1 emoji, 44px for 2-3 emojis, 24px for inline with text
     const emojiSize = React.useMemo(() => {
-        if (!isEmojiOnly) return 22;
+        if (!isEmojiOnly) return 24;
         const emojiCount = tokens.filter((t) => t.type === "emoji").length;
-        if (emojiCount === 1) return 48;
-        if (emojiCount <= 3) return 40;
-        return 32;
+        if (emojiCount === 1) return 56;
+        if (emojiCount <= 3) return 44;
+        return 34;
     }, [isEmojiOnly, tokens]);
 
     if (!hasEmojis || !text.trim()) return null;
@@ -128,16 +128,16 @@ export default function LiveMessagePreview({ inputProps }: { inputProps?: any })
     return (
         <RN.View
             style={{
-                backgroundColor: "rgba(20, 21, 24, 0.95)",
+                backgroundColor: "rgba(20, 21, 24, 0.96)",
                 borderRadius: 12,
-                marginHorizontal: 8,
+                marginHorizontal: 10,
                 marginBottom: 6,
                 padding: 10,
                 borderWidth: 1,
-                borderColor: "rgba(88, 101, 242, 0.45)",
+                borderColor: "rgba(88, 101, 242, 0.5)",
                 shadowColor: "#000",
                 shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.3,
+                shadowOpacity: 0.35,
                 shadowRadius: 4,
             }}
         >
@@ -162,7 +162,7 @@ export default function LiveMessagePreview({ inputProps }: { inputProps?: any })
             <RN.View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
                 <RN.Image
                     source={{ uri: avatarUrl }}
-                    style={{ width: 34, height: 34, borderRadius: 17 }}
+                    style={{ width: 36, height: 36, borderRadius: 18 }}
                 />
 
                 <RN.View style={{ flex: 1 }}>
@@ -188,7 +188,7 @@ export default function LiveMessagePreview({ inputProps }: { inputProps?: any })
                                             width: emojiSize,
                                             height: emojiSize,
                                             marginHorizontal: isEmojiOnly ? 4 : 2,
-                                            marginVertical: isEmojiOnly ? 2 : 0,
+                                            marginVertical: isEmojiOnly ? 4 : 0,
                                         }}
                                         resizeMode="contain"
                                     />
@@ -197,7 +197,7 @@ export default function LiveMessagePreview({ inputProps }: { inputProps?: any })
                             return (
                                 <RN.Text
                                     key={`prev-txt-${index}`}
-                                    style={{ color: "#dbdee1", fontSize: 14 }}
+                                    style={{ color: "#dbdee1", fontSize: 15 }}
                                 >
                                     {token.content}
                                 </RN.Text>
