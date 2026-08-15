@@ -37,6 +37,7 @@ export interface EmojiPack {
 
 // --- CONSTANTS ---
 const PLUGIN_TAG = "[UserEmojiPicker]";
+const USER_PICKER_CATEGORY = "User App Emojis";
 const REQUIRED_COMMANDS: CommandName[] = [
     "e",
     "ed",
@@ -50,15 +51,21 @@ const emojiRegex = /<a?:([A-Za-z0-9_]+):(\d+)>/g;
 const PACKS_URL =
     "https://raw.githubusercontent.com/MORGANlTE/selfhosted-user-emojis-for-free/refs/heads/main/vencord_plugin/packs_index.json";
 
-// --- METRO MODULE RESOLVER ---
+// --- METRO MODULE RESOLVERS ---
 const MessageActions = findByProps("sendMessage", "editMessage");
 const RestAPI = findByProps("get", "post", "del");
 const AuthenticationStore = findByStoreName("AuthenticationStore");
 const SelectedGuildStore = findByStoreName("SelectedGuildStore");
 const SelectedChannelStore = findByProps("getChannelId", "getVoiceChannelId");
 const UserStore = findByStoreName("UserStore");
+const GuildStore = findByStoreName("GuildStore");
+const EmojiStore = findByStoreName("EmojiStore") || findByProps("getCustomEmojiById", "getEmojis");
 const LazyActionSheet = findByProps("openLazy", "hideActionSheet");
+const ModalActions = findByProps("popModal", "pushModal");
 const RowManager = findByProps("createRowFromMessage", "generateRows");
+const DraftStore = findByStoreName("DraftStore");
+const DraftActions = findByProps("setDraft", "saveDraft");
+const ComponentDispatch = findByProps("dispatchToLastSubscribed");
 
 const { FormSection, FormSwitchRow, FormInput, FormRow } = Forms;
 let unpatches: Function[] = [];
@@ -82,28 +89,104 @@ export function getActiveApp(): DiscoveredApp | undefined {
     return (storage.apps || []).find((a: DiscoveredApp) => a.appId === storage.selectedAppId);
 }
 
+// Builds an internal Discord Emoji Object compatible with Autocomplete & Chat
+function buildEmojiObj(emoji: AppEmoji) {
+    const ext = emoji.animated ? "gif" : "png";
+    return {
+        id: emoji.id,
+        name: emoji.name,
+        originalName: emoji.name,
+        animated: emoji.animated,
+        available: true,
+        managed: false,
+        require_colons: true,
+        roles: [],
+        url: `https://cdn.discordapp.com/emojis/${emoji.id}.${ext}?size=48&quality=lossless`,
+        allNamesString: `:${emoji.name}:`,
+        type: 3,
+        category: USER_PICKER_CATEGORY,
+        categoryName: USER_PICKER_CATEGORY,
+        source: "discord",
+        score: 2147483647,
+        isLocked: false,
+        locked: false,
+        disabled: false,
+        guildId: "UserAppEmojis",
+    };
+}
+
 export function closeEmojiModal() {
-    if (LazyActionSheet?.hideActionSheet) {
-        LazyActionSheet.hideActionSheet();
-    }
+    try {
+        if (LazyActionSheet?.hideActionSheet) {
+            LazyActionSheet.hideActionSheet();
+        }
+        if (ModalActions?.popModal) {
+            ModalActions.popModal("CustomEmojiStoreSheet");
+        }
+    } catch {}
 }
 
 export function openEmojiModal() {
-    if (LazyActionSheet?.openLazy) {
-        LazyActionSheet.openLazy(
-            async () => () => <EmojiStoreModal />,
-            "CustomEmojiStoreSheet"
-        );
-    } else {
-        showToast(`${PLUGIN_TAG} ActionSheet unavailable`, 2);
+    try {
+        if (LazyActionSheet?.openLazy) {
+            LazyActionSheet.openLazy(
+                async () => () => <EmojiStoreModal />,
+                "CustomEmojiStoreSheet"
+            );
+        } else {
+            showToast(`${PLUGIN_TAG} ActionSheet module unavailable`, 2);
+        }
+    } catch (e) {
+        logStatus(`openEmojiModal error: ${e}`, true);
+    }
+}
+
+// Inserts emoji tag directly into the chat bar draft
+export function insertEmojiIntoDraft(emoji: AppEmoji) {
+    const channelId = SelectedChannelStore?.getChannelId();
+    if (!channelId) {
+        showToast(`${PLUGIN_TAG} No active channel`, 2);
+        return;
+    }
+
+    const tag = `<${emoji.animated ? "a" : ""}:${emoji.name}:${emoji.id}>`;
+
+    try {
+        if (ComponentDispatch?.dispatchToLastSubscribed) {
+            ComponentDispatch.dispatchToLastSubscribed("INSERT_TEXT", {
+                plainText: tag + " ",
+                rawText: tag + " ",
+            });
+            closeEmojiModal();
+            return;
+        }
+
+        if (DraftActions && DraftStore) {
+            const currentDraft = DraftStore.getDraft(channelId, 0) || "";
+            const updated = currentDraft ? `${currentDraft} ${tag} ` : `${tag} `;
+            if (typeof DraftActions.saveDraft === "function") {
+                DraftActions.saveDraft(channelId, updated, 0);
+            } else if (typeof DraftActions.setDraft === "function") {
+                DraftActions.setDraft(channelId, updated, 0);
+            }
+            closeEmojiModal();
+            return;
+        }
+
+        RN.Clipboard.setString(tag);
+        showToast(`${PLUGIN_TAG} Copied :${emoji.name}: to clipboard`, 1);
+        closeEmojiModal();
+    } catch {
+        RN.Clipboard.setString(tag);
+        showToast(`${PLUGIN_TAG} Copied :${emoji.name}: to clipboard`, 1);
+        closeEmojiModal();
     }
 }
 
 export async function dispatchAppCommand(cmdName: CommandName, channelId: string, options: any[] = []) {
     const app = getActiveApp();
     if (!app || !app.commands[cmdName]) {
-        showToast(`${PLUGIN_TAG} Command /${cmdName} not found on your app`, 2);
-        logStatus(`Dispatch failed: /${cmdName} not registered`, true);
+        showToast(`${PLUGIN_TAG} Command /${cmdName} not found`, 2);
         return;
     }
 
@@ -129,17 +212,15 @@ export async function dispatchAppCommand(cmdName: CommandName, channelId: string
                 nonce: Date.now().toString(),
             },
         });
-        showToast(`${PLUGIN_TAG} Fired /${cmdName}`, 1);
-        logStatus(`Executed /${cmdName} in channel ${channelId}`);
-    } catch (err) {
+        showToast(`${PLUGIN_TAG} Sent /${cmdName}`, 1);
+    } catch {
         showToast(`${PLUGIN_TAG} Failed /${cmdName}`, 2);
-        logStatus(`API Error executing /${cmdName}: ${String(err)}`, true);
     }
 }
 
 export async function syncEmojisFromBot(manual = false) {
     try {
-        logStatus("Starting /esync background sync...");
+        logStatus("Syncing emojis from bot...");
         if (!storage.selectedAppId) {
             const cmdData = await RestAPI.get({ url: "/users/@me/application-command-index" });
             const cmds = cmdData?.body?.application_commands || [];
@@ -163,15 +244,11 @@ export async function syncEmojisFromBot(manual = false) {
 
             if (storage.apps.length > 0) {
                 storage.selectedAppId = storage.apps[0].appId;
-                logStatus(`Auto-selected User App ID: ${storage.selectedAppId}`);
             }
         }
 
         const app = getActiveApp();
-        if (!app || !app.commands.esync) {
-            logStatus("Missing active app or /esync command", true);
-            return;
-        }
+        if (!app || !app.commands.esync) return;
 
         const dmReq = await RestAPI.post({
             url: "/users/@me/channels",
@@ -183,7 +260,7 @@ export async function syncEmojisFromBot(manual = false) {
         const jsonPromise = new Promise<{ url: string; msgId: string }>((resolve, reject) => {
             const timeout = setTimeout(() => {
                 FluxDispatcher.unsubscribe("MESSAGE_CREATE", onMsg);
-                reject(new Error("Timeout waiting for /esync payload"));
+                reject(new Error("Timeout"));
             }, 15000);
 
             function onMsg(e: any) {
@@ -224,19 +301,19 @@ export async function syncEmojisFromBot(manual = false) {
         const data: AppEmoji[] = await emojisReq.json();
 
         storage.emojis = data;
-        logStatus(`Synced ${data.length} emojis successfully.`);
+        logStatus(`Synced ${data.length} emojis.`);
         if (manual) showToast(`${PLUGIN_TAG} Synced ${data.length} emojis!`, 1);
 
         try {
             await RestAPI.del({ url: `/channels/${dmChannelId}/messages/${res.msgId}` });
         } catch {}
     } catch (e) {
-        logStatus(`Sync error: ${String(e)}`, true);
+        logStatus(`Sync error: ${e}`, true);
         if (manual) showToast(`${PLUGIN_TAG} Sync failed`, 2);
     }
 }
 
-// --- EMOJI STORE MODAL (COMPACT BOTTOM SHEET WITH CLOSE BUTTON) ---
+// --- EMOJI STORE MODAL ---
 function EmojiStoreModal() {
     const [tab, setTab] = React.useState<"emojis" | "market">("emojis");
     const [search, setSearch] = React.useState("");
@@ -252,7 +329,7 @@ function EmojiStoreModal() {
             fetch(PACKS_URL)
                 .then((res) => res.json())
                 .then((data) => setRemotePacks(Array.isArray(data) ? data : []))
-                .catch((e) => logStatus(`Market fetch failed: ${e}`, true))
+                .catch(() => {})
                 .finally(() => setLoadingPacks(false));
         }
     }, [tab]);
@@ -276,50 +353,33 @@ function EmojiStoreModal() {
         return packName.toLowerCase() === selectedPack.toLowerCase();
     });
 
-    const handleSendEmoji = (emoji: AppEmoji) => {
-        const channelId = SelectedChannelStore?.getChannelId();
-        if (!channelId) {
-            showToast(`${PLUGIN_TAG} No active channel found`, 2);
-            return;
-        }
-        const tag = `<${emoji.animated ? "a" : ""}:${emoji.name}:${emoji.id}>`;
-        try {
-            MessageActions.sendMessage(channelId, { content: tag });
-            closeEmojiModal();
-        } catch {
-            RN.Clipboard.setString(tag);
-            showToast(`${PLUGIN_TAG} Copied :${emoji.name}: to clipboard!`, 1);
-            closeEmojiModal();
-        }
-    };
-
     return (
         <RN.View
             style={{
-                height: 380,
+                maxHeight: 340,
+                minHeight: 280,
                 backgroundColor: "#1e1f22",
                 borderTopLeftRadius: 16,
                 borderTopRightRadius: 16,
-                overflow: "hidden",
-                display: "flex",
-                flexDirection: "column",
+                paddingHorizontal: 12,
+                paddingTop: 10,
+                paddingBottom: 16,
             }}
         >
-            {/* Header with Title and Close Button */}
+            {/* Header */}
             <RN.View
                 style={{
                     flexDirection: "row",
                     alignItems: "center",
                     justifyContent: "space-between",
-                    paddingHorizontal: 16,
-                    paddingVertical: 10,
+                    paddingBottom: 8,
                     borderBottomWidth: 1,
                     borderBottomColor: "rgba(255, 255, 255, 0.1)",
                 }}
             >
-                <RN.View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <RN.Text style={{ fontSize: 18 }}>💎</RN.Text>
-                    <RN.Text style={{ color: "#fff", fontSize: 15, fontWeight: "bold" }}>
+                <RN.View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <RN.Text style={{ fontSize: 16 }}>💎</RN.Text>
+                    <RN.Text style={{ color: "#fff", fontSize: 14, fontWeight: "bold" }}>
                         Custom Emojis ({emojis.length})
                     </RN.Text>
                 </RN.View>
@@ -328,131 +388,123 @@ function EmojiStoreModal() {
                     <RN.TouchableOpacity
                         onPress={() => syncEmojisFromBot(true)}
                         style={{
-                            paddingVertical: 4,
+                            paddingVertical: 3,
                             paddingHorizontal: 8,
                             backgroundColor: "rgba(88, 101, 242, 0.2)",
                             borderRadius: 6,
                         }}
                     >
-                        <RN.Text style={{ color: "#5865F2", fontSize: 12, fontWeight: "600" }}>
+                        <RN.Text style={{ color: "#5865F2", fontSize: 11, fontWeight: "600" }}>
                             Resync
                         </RN.Text>
                     </RN.TouchableOpacity>
+
                     <RN.TouchableOpacity
                         onPress={closeEmojiModal}
                         style={{
-                            backgroundColor: "rgba(255,255,255,0.1)",
-                            borderRadius: 14,
-                            width: 28,
-                            height: 28,
+                            backgroundColor: "rgba(255, 255, 255, 0.1)",
+                            borderRadius: 12,
+                            width: 24,
+                            height: 24,
                             alignItems: "center",
                             justifyContent: "center",
                         }}
                     >
-                        <RN.Text style={{ color: "#fff", fontSize: 14, fontWeight: "bold" }}>✕</RN.Text>
+                        <RN.Text style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}>✕</RN.Text>
                     </RN.TouchableOpacity>
                 </RN.View>
             </RN.View>
 
-            {/* Navigation Tabs */}
-            <RN.View
-                style={{
-                    flexDirection: "row",
-                    paddingHorizontal: 12,
-                    paddingVertical: 6,
-                    gap: 8,
-                }}
-            >
+            {/* Tabs */}
+            <RN.View style={{ flexDirection: "row", paddingVertical: 6, gap: 6 }}>
                 <RN.TouchableOpacity
                     onPress={() => setTab("emojis")}
                     style={{
-                        paddingVertical: 6,
-                        paddingHorizontal: 16,
+                        paddingVertical: 4,
+                        paddingHorizontal: 12,
                         backgroundColor: tab === "emojis" ? "#5865F2" : "rgba(255,255,255,0.06)",
                         borderRadius: 6,
                     }}
                 >
-                    <RN.Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>Emojis</RN.Text>
+                    <RN.Text style={{ color: "#fff", fontSize: 11, fontWeight: "600" }}>Emojis</RN.Text>
                 </RN.TouchableOpacity>
                 <RN.TouchableOpacity
                     onPress={() => setTab("market")}
                     style={{
-                        paddingVertical: 6,
-                        paddingHorizontal: 16,
+                        paddingVertical: 4,
+                        paddingHorizontal: 12,
                         backgroundColor: tab === "market" ? "#5865F2" : "rgba(255,255,255,0.06)",
                         borderRadius: 6,
                     }}
                 >
-                    <RN.Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>Pack Market</RN.Text>
+                    <RN.Text style={{ color: "#fff", fontSize: 11, fontWeight: "600" }}>Packs</RN.Text>
                 </RN.TouchableOpacity>
             </RN.View>
 
-            {/* Content Area */}
+            {/* Body */}
             {tab === "emojis" ? (
-                <RN.View style={{ flex: 1, paddingHorizontal: 12 }}>
+                <RN.View style={{ flex: 1 }}>
                     <RN.TextInput
                         value={search}
-                        placeholder="Search custom emojis..."
+                        placeholder="Search emojis..."
                         placeholderTextColor="#888"
                         onChangeText={setSearch}
                         style={{
                             backgroundColor: "rgba(0,0,0,0.3)",
                             color: "#fff",
-                            paddingHorizontal: 10,
-                            paddingVertical: 6,
-                            borderRadius: 8,
-                            fontSize: 13,
-                            marginBottom: 8,
+                            paddingHorizontal: 8,
+                            paddingVertical: 4,
+                            borderRadius: 6,
+                            fontSize: 12,
+                            marginBottom: 6,
                         }}
                     />
 
-                    {/* Pack Filter Bar */}
                     {packs.length > 2 && (
                         <RN.ScrollView
                             horizontal
                             showsHorizontalScrollIndicator={false}
-                            style={{ maxHeight: 28, marginBottom: 8 }}
+                            style={{ maxHeight: 26, marginBottom: 6 }}
                         >
                             {packs.map((p) => (
                                 <RN.TouchableOpacity
                                     key={p}
                                     onPress={() => setSelectedPack(p)}
                                     style={{
-                                        paddingHorizontal: 10,
-                                        paddingVertical: 3,
+                                        paddingHorizontal: 8,
+                                        paddingVertical: 2,
                                         backgroundColor: selectedPack === p ? "#5865F2" : "rgba(255,255,255,0.08)",
-                                        borderRadius: 12,
-                                        marginRight: 6,
+                                        borderRadius: 10,
+                                        marginRight: 4,
                                     }}
                                 >
-                                    <RN.Text style={{ color: "#fff", fontSize: 11 }}>{p}</RN.Text>
+                                    <RN.Text style={{ color: "#fff", fontSize: 10 }}>{p}</RN.Text>
                                 </RN.TouchableOpacity>
                             ))}
                         </RN.ScrollView>
                     )}
 
-                    {/* Grid List */}
-                    <RN.ScrollView style={{ flex: 1 }}>
-                        <RN.View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, paddingBottom: 16 }}>
+                    <RN.ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="always">
+                        <RN.View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, paddingBottom: 10 }}>
                             {filteredEmojis.map((emoji) => {
-                                const url = `https://cdn.discordapp.com/emojis/${emoji.id}.${emoji.animated ? "gif" : "png"}?size=48&quality=lossless`;
+                                const ext = emoji.animated ? "gif" : "png";
+                                const url = `https://cdn.discordapp.com/emojis/${emoji.id}.${ext}?size=64`;
                                 return (
                                     <RN.TouchableOpacity
                                         key={emoji.id}
-                                        onPress={() => handleSendEmoji(emoji)}
+                                        onPress={() => insertEmojiIntoDraft(emoji)}
                                         style={{
                                             alignItems: "center",
                                             justifyContent: "center",
-                                            padding: 4,
                                             backgroundColor: "rgba(255,255,255,0.05)",
-                                            borderRadius: 8,
-                                            width: 44,
-                                            height: 44,
+                                            borderRadius: 6,
+                                            width: 40,
+                                            height: 40,
                                         }}
                                     >
                                         <RN.Image
                                             source={{ uri: url }}
-                                            style={{ width: 32, height: 32 }}
+                                            style={{ width: 28, height: 28 }}
                                             resizeMode="contain"
                                         />
                                     </RN.TouchableOpacity>
@@ -462,10 +514,10 @@ function EmojiStoreModal() {
                     </RN.ScrollView>
                 </RN.View>
             ) : (
-                <RN.ScrollView style={{ flex: 1, paddingHorizontal: 12 }}>
+                <RN.ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="always">
                     {loadingPacks && (
-                        <RN.Text style={{ color: "#aaa", textAlign: "center", marginTop: 20 }}>
-                            Fetching remote packs...
+                        <RN.Text style={{ color: "#aaa", textAlign: "center", marginTop: 10 }}>
+                            Loading packs...
                         </RN.Text>
                     )}
                     {remotePacks.map((pack) => {
@@ -496,12 +548,12 @@ function EmojiStoreModal() {
                                         }}
                                         style={{
                                             backgroundColor: isInstalled ? "#ED4245" : "#5865F2",
-                                            paddingVertical: 5,
-                                            paddingHorizontal: 10,
+                                            paddingVertical: 4,
+                                            paddingHorizontal: 8,
                                             borderRadius: 6,
                                         }}
                                     >
-                                        <RN.Text style={{ color: "#fff", fontSize: 11, fontWeight: "bold" }}>
+                                        <RN.Text style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>
                                             {isInstalled ? "Uninstall" : "Install"}
                                         </RN.Text>
                                     </RN.TouchableOpacity>
@@ -524,7 +576,7 @@ function Settings() {
             <FormSection title="Actions">
                 <FormRow
                     label="Open Emoji Store Picker"
-                    subLabel="Browse emojis and install community packs"
+                    subLabel="Browse custom emojis"
                     onPress={openEmojiModal}
                 />
                 <FormRow
@@ -545,7 +597,7 @@ function Settings() {
                 />
                 <FormSwitchRow
                     label="Bot Ping -> User Ping"
-                    subLabel="Triggers user notification when proxy bot is mentioned"
+                    subLabel="Triggers notification when proxy bot is mentioned"
                     value={storage.botPingToUserPing ?? true}
                     onValueChange={(val: boolean) => {
                         storage.botPingToUserPing = val;
@@ -553,7 +605,7 @@ function Settings() {
                 />
             </FormSection>
 
-            <FormSection title="Live Diagnostic Logs">
+            <FormSection title="Diagnostic Logs">
                 {(storage.debugLogs || []).map((entry: string, idx: number) => (
                     <RN.Text key={idx} style={{ color: "#aaa", fontSize: 11, marginVertical: 2 }}>
                         {entry}
@@ -564,81 +616,73 @@ function Settings() {
     );
 }
 
-// --- CHATBAR INJECTION LOGIC ---
-function injectEmojiButton(res: any) {
-    if (!res || !res.props) return;
+// --- CHATBAR BUTTON INJECTOR ---
+function injectEmojiButton(tree: any) {
+    if (!tree || !tree.props) return;
 
     const emojiBtn = (
         <RN.TouchableOpacity
-            key="morganite-emoji-btn"
+            key="user-app-emoji-btn"
             onPress={openEmojiModal}
             style={{
                 justifyContent: "center",
                 alignItems: "center",
-                paddingHorizontal: 8,
+                paddingHorizontal: 6,
                 paddingVertical: 4,
-                marginRight: 4,
             }}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-            <RN.Text style={{ fontSize: 20 }}>💎</RN.Text>
+            <RN.Text style={{ fontSize: 18 }}>💎</RN.Text>
         </RN.TouchableOpacity>
     );
 
-    const hasButton = (arr: any[]) =>
-        arr.some((child) => child?.key === "morganite-emoji-btn");
+    const hasButton = (list: any[]) =>
+        list.some((item) => item?.key === "user-app-emoji-btn");
 
-    if (Array.isArray(res.props.children)) {
-        if (!hasButton(res.props.children)) {
-            res.props.children.unshift(emojiBtn);
+    if (Array.isArray(tree.props.children)) {
+        if (!hasButton(tree.props.children)) {
+            tree.props.children.unshift(emojiBtn);
         }
-        return;
-    }
-
-    if (res.props.children?.props?.children) {
-        const nested = res.props.children.props.children;
-        if (Array.isArray(nested)) {
-            if (!hasButton(nested)) {
-                nested.unshift(emojiBtn);
-            }
-            return;
+    } else if (tree.props.children?.props?.children && Array.isArray(tree.props.children.props.children)) {
+        if (!hasButton(tree.props.children.props.children)) {
+            tree.props.children.props.children.unshift(emojiBtn);
         }
-    }
-
-    if (res.props.children && typeof res.props.children === "object") {
-        res.props.children = [emojiBtn, res.props.children];
     }
 }
 
 function patchChatBar() {
-    const candidates = [
-        { mod: findByName("ChatInputActions", false) || findByProps("ChatInputActions"), name: "ChatInputActions" },
-        { mod: findByName("ChatAccessories", false) || findByProps("ChatAccessories"), name: "ChatAccessories" },
-        { mod: findByName("ChatInput", false) || findByProps("ChatInput", "renderChatInput"), name: "ChatInput" },
-    ];
+    const modulesToPatch = [
+        findByName("ChatInputActions", false),
+        findByName("ChatAccessories", false),
+        findByName("ChatInput", false),
+        findByProps("ChatInputActions"),
+        findByProps("ChatAccessories"),
+        findByProps("ChatInput"),
+    ].filter(Boolean);
 
-    for (const { mod, name } of candidates) {
-        if (!mod) continue;
-
+    for (const mod of modulesToPatch) {
         try {
-            const propToPatch = mod.default ? "default" : mod[name] ? name : typeof mod === "function" ? "render" : null;
-            const target = propToPatch ? mod : Object.keys(mod).find((k) => typeof mod[k] === "function");
-            const targetProp = propToPatch || target;
-
-            if (targetProp && typeof mod[targetProp] === "function") {
+            const funcKey = typeof mod === "function" ? null : mod.default ? "default" : Object.keys(mod).find((k) => typeof mod[k] === "function");
+            
+            if (funcKey) {
                 unpatches.push(
-                    patcher.after(targetProp, mod, (_, res) => {
+                    patcher.after(funcKey, mod, (_, res) => {
                         try {
                             injectEmojiButton(res);
                         } catch {}
                         return res;
                     })
                 );
-                logStatus(`Patched chat bar component via ${name}`);
+            } else if (typeof mod === "function") {
+                unpatches.push(
+                    patcher.after(mod, (_, res) => {
+                        try {
+                            injectEmojiButton(res);
+                        } catch {}
+                        return res;
+                    })
+                );
             }
-        } catch (err) {
-            logStatus(`Error hooking ${name}: ${err}`, true);
-        }
+        } catch {}
     }
 }
 
@@ -651,26 +695,117 @@ export default {
         if (!storage.debugLogs) storage.debugLogs = [];
         if (storage.botPingToUserPing === undefined) storage.botPingToUserPing = true;
 
-        logStatus("Initializing plugin hooks...");
+        logStatus("Loaded UserEmojiPicker");
 
-        // 1. Fallback /emojistore Command
+        // 1. GuildStore Mock (Categories & Guild Object)
+        if (GuildStore?.getGuild) {
+            unpatches.push(
+                patcher.instead("getGuild", GuildStore, (args, orig) => {
+                    if (args[0] === "UserAppEmojis") {
+                        return {
+                            id: "UserAppEmojis",
+                            name: USER_PICKER_CATEGORY,
+                            getIconURL: () => null,
+                        };
+                    }
+                    return orig.apply(GuildStore, args);
+                })
+            );
+        }
+
+        // 2. Native Autocomplete Patches (EmojiStore Integration)
+        if (EmojiStore) {
+            // A. Search Autocomplete List
+            if (typeof EmojiStore.searchWithoutFetchingLatest === "function") {
+                unpatches.push(
+                    patcher.instead("searchWithoutFetchingLatest", EmojiStore, (args, orig) => {
+                        const [opts] = args;
+                        const result = orig.apply(EmojiStore, args) || {};
+                        const query = String(opts?.query ?? "").toLowerCase();
+                        const loaded: AppEmoji[] = storage.emojis || [];
+
+                        if (!query || !loaded.length) return result;
+
+                        if (!Array.isArray(result.unlocked)) result.unlocked = [];
+
+                        const existingIds = new Set(result.unlocked.map((e: any) => String(e?.id ?? "")));
+                        const customMatches: any[] = [];
+
+                        for (const emoji of loaded) {
+                            if (emoji.name.toLowerCase().includes(query) && !existingIds.has(emoji.id)) {
+                                customMatches.push(buildEmojiObj(emoji));
+                            }
+                        }
+
+                        if (customMatches.length) {
+                            result.unlocked = [...customMatches, ...result.unlocked];
+                        }
+                        return result;
+                    })
+                );
+            }
+
+            // B. Custom Emoji Metadata Resolver
+            if (typeof EmojiStore.getCustomEmojiById === "function") {
+                unpatches.push(
+                    patcher.instead("getCustomEmojiById", EmojiStore, (args, orig) => {
+                        const [id] = args;
+                        const loaded: AppEmoji[] = storage.emojis || [];
+                        const found = loaded.find((e) => e.id === id);
+                        if (found) return buildEmojiObj(found);
+                        return orig.apply(EmojiStore, args);
+                    })
+                );
+            }
+
+            // C. Emoji Usability Flag (Prevents Nitro Lockout)
+            if (typeof EmojiStore.isEmojiUsable === "function") {
+                unpatches.push(
+                    patcher.instead("isEmojiUsable", EmojiStore, (args, orig) => {
+                        const [emoji] = args;
+                        const loaded: AppEmoji[] = storage.emojis || [];
+                        if (emoji && loaded.some((e) => e.id === emoji.id)) {
+                            return true;
+                        }
+                        return orig.apply(EmojiStore, args);
+                    })
+                );
+            }
+
+            // D. Append to getEmojis Pool
+            if (typeof EmojiStore.getEmojis === "function") {
+                unpatches.push(
+                    patcher.after("getEmojis", EmojiStore, (_, res) => {
+                        const loaded: AppEmoji[] = storage.emojis || [];
+                        if (Array.isArray(res) && loaded.length > 0) {
+                            for (const emoji of loaded) {
+                                res.push(buildEmojiObj(emoji));
+                            }
+                        }
+                        return res;
+                    })
+                );
+            }
+        }
+
+        // 3. Slash Command
         try {
             unpatches.push(
                 registerCommand({
                     name: "emojistore",
                     displayName: "emojistore",
-                    description: "Open your custom User App Emoji picker",
-                    displayDescription: "Open your custom User App Emoji picker",
+                    description: "Open User App Emoji picker",
+                    displayDescription: "Open User App Emoji picker",
                     options: [],
                     execute: openEmojiModal,
                 })
             );
         } catch {}
 
-        // 2. Chat Bar Accessory Button
+        // 4. Chat Bar Accessory Button
         patchChatBar();
 
-        // 3. Message Interception (Sending & Proxying)
+        // 5. Message Interception (Sending & Bot Proxying)
         if (MessageActions) {
             unpatches.push(
                 patcher.instead("sendMessage", MessageActions, async (args, orig) => {
@@ -724,7 +859,7 @@ export default {
             );
         }
 
-        // 4. Local Message Rendering (Transform ;emoji; in incoming chat view)
+        // 6. Local Message Rendering (Transform ;emoji; in incoming chat view)
         if (RowManager?.createRowFromMessage) {
             unpatches.push(
                 patcher.after("createRowFromMessage", RowManager, (_, res) => {
@@ -747,7 +882,7 @@ export default {
             );
         }
 
-        // 5. Bot Mention Interceptor
+        // 7. Bot Mention Interceptor
         unpatches.push(
             patcher.instead("dispatch", FluxDispatcher, (args, orig) => {
                 const [event] = args;
@@ -781,24 +916,24 @@ export default {
             })
         );
 
-        // 6. ActionSheet Long-Press Hook (Steal Emojis)
+        // 8. ActionSheet Long-Press Hook (Steal Emojis)
         if (LazyActionSheet?.openLazy) {
             unpatches.push(
                 patcher.before("openLazy", LazyActionSheet, (args) => {
                     const [factory, key] = args;
                     if (key === "MessageLongPressActionSheet" || key === "MessageActionsActionSheet") {
                         args[0] = async () => {
-                            try {
-                                const Component = await factory();
-                                return (props: any) => {
-                                    try {
-                                        const rendered = Component(props);
-                                        const message = props?.message;
-                                        const content = message?.content || "";
-                                        const app = getActiveApp();
+                            const Component = await factory();
+                            return (props: any) => {
+                                const rendered = typeof Component === "function" ? Component(props) : Component;
+                                if (!rendered) return rendered;
 
-                                        if (!rendered || !app) return rendered;
+                                try {
+                                    const message = props?.message;
+                                    const content = message?.content || "";
+                                    const app = getActiveApp();
 
+                                    if (app) {
                                         const matches = Array.from(content.matchAll(emojiRegex));
                                         if (matches.length > 0) {
                                             const stealButtons = matches.map((m) => {
@@ -806,7 +941,7 @@ export default {
                                                 const name = m[1];
                                                 return (
                                                     <RN.TouchableOpacity
-                                                        key={`steal-${name}`}
+                                                        key={`steal-${name}-${m[2]}`}
                                                         onPress={() => {
                                                             closeEmojiModal();
                                                             dispatchAppCommand("stealemoji", message.channel_id, [
@@ -821,28 +956,23 @@ export default {
                                                             marginVertical: 4,
                                                         }}
                                                     >
-                                                        <RN.Text style={{ color: "#fff", fontWeight: "bold" }}>
-                                                            Steal :{name}:
+                                                        <RN.Text style={{ color: "#5865F2", fontWeight: "bold" }}>
+                                                            📥 Steal :{name}:
                                                         </RN.Text>
                                                     </RN.TouchableOpacity>
                                                 );
                                             });
 
-                                            return (
-                                                <RN.View style={{ flex: 1 }}>
-                                                    {rendered}
-                                                    <RN.View style={{ padding: 12 }}>{stealButtons}</RN.View>
-                                                </RN.View>
-                                            );
+                                            if (rendered?.props && Array.isArray(rendered.props.children)) {
+                                                rendered.props.children.push(...stealButtons);
+                                            } else if (rendered?.props?.children?.props && Array.isArray(rendered.props.children.props.children)) {
+                                                rendered.props.children.props.children.push(...stealButtons);
+                                            }
                                         }
-                                        return rendered;
-                                    } catch (renderErr) {
-                                        return Component(props);
                                     }
-                                };
-                            } catch (e) {
-                                return factory();
-                            }
+                                } catch {}
+                                return rendered;
+                            };
                         };
                     }
                     return args;
