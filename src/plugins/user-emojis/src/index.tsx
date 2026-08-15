@@ -7,7 +7,7 @@ import { patchAutocomplete } from "./patches/autocomplete";
 import { patchChatBar } from "./patches/chatBar";
 import { patchMessageActions } from "./patches/messageActions";
 import { patchMessages } from "./patches/messages";
-import { syncEmojisFromBot } from "./utils/botApi";
+import { preloadRemotePacks, syncEmojisFromBot } from "./utils/botApi";
 import { logStatus } from "./utils/logger";
 import { openEmojiModal } from "./utils/navigation";
 
