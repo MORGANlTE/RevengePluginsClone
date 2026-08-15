@@ -1,6 +1,6 @@
 ---
 title: UserEmojiPicker (by _morganite)
-description: Ported User App Emoji integration for Revenge (mobile)
+description: Ported User App Emoji integration for Revenge
 ---
 
 <!--
@@ -10,7 +10,7 @@ description: Ported User App Emoji integration for Revenge (mobile)
 
 <div align="center">
 <h1>UserEmojiPicker (by _morganite)</h1>
-<h3>Ported User App Emoji integration for Revenge (mobile)</h3>
+<h3>Ported User App Emoji integration for Revenge</h3>
 </div>
 
 > **Note**

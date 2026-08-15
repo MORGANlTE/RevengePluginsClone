@@ -1,10 +1,11 @@
 import { patcher } from "@vendetta";
-import { findByProps, findByStoreName } from "@vendetta/metro";
+import { findByProps, findByStoreName, findByName } from "@vendetta/metro";
 import { storage } from "@vendetta/plugin";
-import { FluxDispatcher, React } from "@vendetta/metro/common";
+import { FluxDispatcher, React, ReactNative as RN } from "@vendetta/metro/common";
 import { showToast } from "@vendetta/ui/toasts";
 import Settings from "./settings";
-import type { AppEmoji, CommandMeta, CommandName, DiscoveredApp } from "./types";
+import { EmojiStoreModal } from "./storeModal";
+import type { AppEmoji, CommandName, DiscoveredApp } from "./types";
 
 const REQUIRED_COMMANDS: CommandName[] = [
     "e",
@@ -17,15 +18,16 @@ const REQUIRED_COMMANDS: CommandName[] = [
     "uninstallpack",
 ];
 
-const emojiRegex = /<a?:([A-Za-z0-9_]+):(\d+)>|:([A-Za-z0-9_]+):|;([A-Za-z0-9_]+);/g;
+const emojiRegex = /<a?:([A-Za-z0-9_]+):(\d+)>/g;
 
 const MessageActions = findByProps("sendMessage", "editMessage");
 const RestAPI = findByProps("get", "post", "del");
 const AuthenticationStore = findByStoreName("AuthenticationStore");
 const SelectedGuildStore = findByStoreName("SelectedGuildStore");
 const UserStore = findByStoreName("UserStore");
-const ActionSheet = findByProps("openLazy", "hideActionSheet");
+const LazyActionSheet = findByProps("openLazy", "hideActionSheet");
 const RowManager = findByProps("createRowFromMessage", "generateRows");
+const ChatInput = findByName("ChatInput", false) || findByProps("ChatInput");
 
 let unpatches: Function[] = [];
 
@@ -167,7 +169,8 @@ export default {
         if (!storage.apps) storage.apps = [];
         if (storage.botPingToUserPing === undefined) storage.botPingToUserPing = true;
         if (!storage.packIndexUrl) {
-            storage.packIndexUrl = "https://raw.githubusercontent.com/MORGANlTE/selfhosted-user-emojis-for-free/refs/heads/main/vencord_plugin/packs_index.json";
+            storage.packIndexUrl =
+                "https://raw.githubusercontent.com/MORGANlTE/selfhosted-user-emojis-for-free/refs/heads/main/vencord_plugin/packs_index.json";
         }
 
         syncEmojisFromBot(false);
@@ -185,13 +188,8 @@ export default {
 
                         const transformed = String(message.content).replace(
                             emojiRegex,
-                            (match, tag, _id, colon, semi) => {
-                                if (semi === "random" && loaded.length > 0) {
-                                    replaced = true;
-                                    const rand = loaded[Math.floor(Math.random() * loaded.length)];
-                                    return `;${rand.name};`;
-                                }
-                                const raw = (tag || colon || semi || "").toLowerCase();
+                            (match, tag, _id) => {
+                                const raw = tag.toLowerCase();
                                 const found = emojiMap.get(raw);
                                 if (found) {
                                     replaced = true;
@@ -289,56 +287,101 @@ export default {
             })
         );
 
-        // 4. ActionSheet Hooks (Steal Emojis & Edit Bot Messages)
-        if (ActionSheet?.openLazy) {
+        // 4. In-Chat Access Button (Mounts 💎 button directly onto mobile Chat Input Bar)
+        if (ChatInput) {
             unpatches.push(
-                patcher.before("openLazy", ActionSheet, (args) => {
-                    const [component, key] = args;
-                    if (key === "MessageLongPressActionSheet") {
+                patcher.after("default", ChatInput, (_, res) => {
+                    const children = res?.props?.children;
+                    if (!children) return res;
+
+                    const EmojiPickerButton = (
+                        <RN.TouchableOpacity
+                            key="user-emoji-store-btn"
+                            onPress={() => {
+                                if (LazyActionSheet?.openLazy) {
+                                    LazyActionSheet.openLazy(
+                                        async () => () => <EmojiStoreModal />,
+                                        "CustomEmojiStoreSheet"
+                                    );
+                                }
+                            }}
+                            style={{
+                                justifyContent: "center",
+                                alignItems: "center",
+                                paddingHorizontal: 8,
+                            }}
+                        >
+                            <RN.Text style={{ fontSize: 20 }}>💎</RN.Text>
+                        </RN.TouchableOpacity>
+                    );
+
+                    if (Array.isArray(children)) {
+                        children.unshift(EmojiPickerButton);
+                    }
+                    return res;
+                })
+            );
+        }
+
+        // 5. Message Long-Press Steal Emoji Hook
+        if (LazyActionSheet?.openLazy) {
+            unpatches.push(
+                patcher.before("openLazy", LazyActionSheet, (args) => {
+                    const [factory, key] = args;
+                    if (key === "MessageLongPressActionSheet" || key === "MessageActionsActionSheet") {
                         args[0] = async () => {
-                            const render = await component();
+                            const Component = await factory();
                             return (props: any) => {
-                                const tree = render(props);
+                                const rendered = Component(props);
                                 const message = props?.message;
                                 const content = message?.content || "";
                                 const app = getActiveApp();
 
-                                if (tree?.props?.children && app) {
-                                    // A. Edit Bot Message
-                                    if (message?.author?.id === app.appId) {
-                                        tree.props.children.push({
-                                            key: "edit-bot-message",
-                                            props: {
-                                                label: "Edit Bot Message",
-                                                onPress: () => {
-                                                    if (ActionSheet.hideActionSheet) ActionSheet.hideActionSheet();
-                                                    dispatchAppCommand("ed", message.channel_id, []);
-                                                },
-                                            },
-                                        });
-                                    }
+                                if (!rendered || !app) return rendered;
 
-                                    // B. Steal Emojis
-                                    const matches = Array.from(content.matchAll(/<a?:([A-Za-z0-9_]+):(\d+)>/g));
-                                    matches.forEach((m) => {
+                                const matches = Array.from(content.matchAll(/<a?:([A-Za-z0-9_]+):(\d+)>/g));
+                                if (matches.length > 0) {
+                                    const stealActions = matches.map((m) => {
                                         const raw = m[0];
                                         const name = m[1];
-                                        tree.props.children.push({
-                                            key: `steal-${name}`,
-                                            props: {
-                                                label: `Steal :${name}:`,
-                                                onPress: () => {
-                                                    if (ActionSheet.hideActionSheet) ActionSheet.hideActionSheet();
+                                        return (
+                                            <RN.TouchableOpacity
+                                                key={`steal-${name}`}
+                                                onPress={() => {
+                                                    if (LazyActionSheet.hideActionSheet) LazyActionSheet.hideActionSheet();
                                                     dispatchAppCommand("stealemoji", message.channel_id, [
                                                         { type: 3, name: "emoji", value: raw },
                                                         { type: 3, name: "new_name", value: name },
                                                     ]);
-                                                },
-                                            },
-                                        });
+                                                }}
+                                                style={{
+                                                    padding: 12,
+                                                    flexDirection: "row",
+                                                    alignItems: "center",
+                                                    backgroundColor: "rgba(255,255,255,0.05)",
+                                                    borderRadius: 8,
+                                                    marginVertical: 4,
+                                                }}
+                                            >
+                                                <RN.Text style={{ color: "#fff", fontWeight: "bold" }}>
+                                                    Steal :{name}:
+                                                </RN.Text>
+                                            </RN.TouchableOpacity>
+                                        );
                                     });
+
+                                    // Safely wrap and inject buttons without breaking the ActionSheet tree
+                                    return (
+                                        <RN.View style={{ flex: 1 }}>
+                                            {rendered}
+                                            <RN.View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+                                                {stealActions}
+                                            </RN.View>
+                                        </RN.View>
+                                    );
                                 }
-                                return tree;
+
+                                return rendered;
                             };
                         };
                     }
