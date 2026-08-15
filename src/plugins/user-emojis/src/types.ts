@@ -1,26 +1,26 @@
-export type CommandName = "e" | "ed" | "esync" | "deleteemoji" | "stealemoji";
+export type CommandName = "e" | "ed" | "esync" | "deleteemoji" | "stealemoji";[cite: 5]
 
 export interface CommandMeta {
-    id: string;
-    version: string;
-    name: CommandName;
+    id: string;[cite: 5]
+    version: string;[cite: 5]
+    name: CommandName;[cite: 5]
 }
 
 export interface DiscoveredApp {
-    appId: string;
-    appName: string;
-    commands: Partial<Record<CommandName, CommandMeta>>;
+    appId: string;[cite: 5]
+    appName: string;[cite: 5]
+    commands: Partial<Record<CommandName, CommandMeta>>;[cite: 5]
 }
 
 export interface AppEmoji {
-    id: string;
-    name: string;
-    animated: boolean;
+    id: string;[cite: 5]
+    name: string;[cite: 5]
+    animated: boolean;[cite: 5]
 }
 
-export interface PluginCache {
+export interface PluginStorage {
     selectedAppId: string;
-    apps: DiscoveredApp[];
+    botPingToUserPing: boolean;
     emojis: AppEmoji[];
-    updatedAt: number;
+    apps: DiscoveredApp[];
 }
