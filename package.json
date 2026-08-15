@@ -42,7 +42,13 @@
 		"typescript": "^5.8.3",
 		"vendetta-types": "^2.4.21",
 		"ws": "^8.18.2",
-		"zustand": "^5.0.6"
+		"zustand": "^5.0.6",
+		"@vendetta/metro": "latest",
+    "@vendetta/patcher": "latest",
+    "@vendetta/plugin": "latest",
+    "@vendetta/ui": "latest",
+    "@types/react": "^18.0.0",
+    "@types/react-native": "^0.70.0"
 	},
 	"pnpm": {
 		"peerDependencyRules": {
