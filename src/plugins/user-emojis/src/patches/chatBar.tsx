@@ -3,9 +3,10 @@ import { React, ReactNative as RN } from "@vendetta/metro/common";
 import { after, before } from "@vendetta/patcher";
 import { getAssetIDByName } from "@vendetta/ui/assets";
 import { findInReactTree } from "@vendetta/utils";
-import { setActiveChatInputRef, transformDraftText } from "../utils/draft";
+import EmojiDrawer from "../ui/EmojiDrawer";
+import { extractChatInputRef, setActiveChatInputRef, transformDraftText } from "../utils/draft";
 import { logStatus } from "../utils/logger";
-import { openEmojiModal } from "../utils/navigation";
+import { toggleEmojiStore } from "../utils/navigation";
 
 export function patchChatBar(): () => void {
     const unpatches: (() => void)[] = [];
@@ -28,29 +29,43 @@ export function patchChatBar(): () => void {
                     }
                 })
             );
-            logStatus("Hooked handleTextChanged for live chatbar emoji preview");
+            logStatus("Hooked handleTextChanged for real-time chat emoji preview");
         }
     }
 
-    // 1. Injects button and hooks input into ChatInputGuardWrapper
+    // 1. Primary ChatView Tree Patch: Mounts EmojiDrawer directly into Chat
+    const ChatView = findByTypeName("ChatView");
+    if (ChatView) {
+        unpatches.push(
+            after("type", ChatView, ([props], ret) => {
+                const inputRef = props?.chatInputRef;
+                if (inputRef) hookInputRef(inputRef);
+
+                return React.createElement(
+                    React.Fragment,
+                    {},
+                    ret,
+                    React.createElement(EmojiDrawer, { inputProps: inputRef })
+                );
+            })
+        );
+        logStatus("Patched ChatView with live EmojiDrawer");
+    }
+
+    // 2. ChatInputGuardWrapper: Injects 💎 button & captures chatInputRef
     const ChatInputGuardWrapper = findByName("ChatInputGuardWrapper", false);
     if (ChatInputGuardWrapper) {
         unpatches.push(
             after("default", ChatInputGuardWrapper, (_, ret) => {
                 if (!ret?.props?.children) return;
 
-                const inputProps = findInReactTree(
-                    ret,
-                    (x) => x?.chatInputRef || x?.props?.chatInputRef?.current || x?.props?.chatInputRef
-                );
-                if (inputProps) {
-                    hookInputRef(inputProps.chatInputRef || inputProps.props?.chatInputRef || inputProps);
-                }
+                const inputRef = extractChatInputRef(ret);
+                if (inputRef) hookInputRef(inputRef);
 
                 const btn = (
                     <RN.TouchableOpacity
                         key="user-emoji-store-bar-btn"
-                        onPress={openEmojiModal}
+                        onPress={toggleEmojiStore}
                         activeOpacity={0.7}
                         style={{
                             height: 34,
@@ -88,20 +103,10 @@ export function patchChatBar(): () => void {
                 }
             })
         );
-        logStatus("Patched ChatInputGuardWrapper for live preview & 💎 button");
+        logStatus("Patched ChatInputGuardWrapper for live button injection");
     }
 
-    // 2. ChatView hook for chatInputRef fallback
-    const ChatView = findByTypeName("ChatView");
-    if (ChatView) {
-        unpatches.push(
-            after("type", ChatView, ([{ chatInputRef }]) => {
-                if (chatInputRef) hookInputRef(chatInputRef);
-            })
-        );
-    }
-
-    // 3. Injects into the "+" Attachment Sheet Actions (useChatInputActions)
+    // 3. Injects into "+" Attachment Sheet Actions (useChatInputActions)
     const chatInputActions =
         findByProps("useChatInputActions") || findByName("useChatInputActions", false);
     if (chatInputActions) {
@@ -117,7 +122,7 @@ export function patchChatBar(): () => void {
                                 getAssetIDByName("ShopIcon") ??
                                 getAssetIDByName("SmileIcon"),
                             label: "Custom Emojis",
-                            action: openEmojiModal,
+                            action: toggleEmojiStore,
                         });
                     }
                 })
@@ -145,7 +150,7 @@ export function patchChatBar(): () => void {
                     const btn = (
                         <RN.TouchableOpacity
                             key="user-emoji-store-bar-btn"
-                            onPress={openEmojiModal}
+                            onPress={toggleEmojiStore}
                             style={{
                                 justifyContent: "center",
                                 alignItems: "center",

@@ -1,7 +1,8 @@
 import { findByProps, findByStoreName } from "@vendetta/metro";
-import { ReactNative as RN } from "@vendetta/metro/common";
+import { FluxDispatcher, ReactNative as RN } from "@vendetta/metro/common";
 import { storage } from "@vendetta/plugin";
 import { showToast } from "@vendetta/ui/toasts";
+import { findInReactTree } from "@vendetta/utils";
 import { AppEmoji } from "../types";
 import { SelectedChannelStore } from "./botApi";
 import { logStatus, PLUGIN_TAG } from "./logger";
@@ -13,8 +14,20 @@ export const TextUtils = findByProps("insertText");
 
 let activeChatInputRef: any = null;
 
+export function extractChatInputRef(tree: any): any {
+    if (!tree) return null;
+    const node = findInReactTree(
+        tree,
+        (x) => x?.chatInputRef?.current || x?.props?.chatInputRef?.current || x?.chatInputRef || x?.props?.chatInputRef
+    );
+    if (!node) return null;
+    return node.chatInputRef || node.props?.chatInputRef || node;
+}
+
 export function setActiveChatInputRef(ref: any) {
-    if (ref) activeChatInputRef = ref;
+    if (ref) {
+        activeChatInputRef = ref;
+    }
 }
 
 export function getActiveChatInputRef(): any {
@@ -47,39 +60,51 @@ export function transformDraftText(text: string): string {
     return result;
 }
 
-export function insertEmojiIntoDraft(emoji: AppEmoji) {
+export function insertEmojiIntoDraft(emoji: AppEmoji, customRef?: any) {
     const channelId = SelectedChannelStore?.getChannelId();
     const tag = `<${emoji.animated ? "a" : ""}:${emoji.name}:${emoji.id}> `;
     let inserted = false;
 
-    // Strategy 1: Active Chat Input Ref (Updates the live visual text input in Discord chat)
-    const inputRef = activeChatInputRef?.current || activeChatInputRef;
-    if (inputRef && typeof inputRef.handleTextChanged === "function") {
+    const ref = customRef || getActiveChatInputRef();
+    const inputTarget = ref?.current || ref;
+
+    // Strategy 1: Active Chat Input handleTextChanged (Directly updates live text on screen)
+    if (inputTarget && typeof inputTarget.handleTextChanged === "function") {
         try {
-            const currentText = typeof inputRef.getText === "function"
-                ? inputRef.getText()
+            const currentText = typeof inputTarget.getText === "function"
+                ? inputTarget.getText()
                 : (DraftStore?.getDraft ? DraftStore.getDraft(channelId, 0) || "" : "");
             const updated = (currentText ? currentText.trimEnd() + " " : "") + tag;
-            inputRef.handleTextChanged(updated);
+            inputTarget.handleTextChanged(updated);
             inserted = true;
-        } catch {}
+            logStatus(`Live input updated on screen with: ${tag}`);
+        } catch (e) {
+            logStatus(`handleTextChanged error: ${String(e)}`, true);
+        }
     }
 
-    // Strategy 2: DraftStore & DraftActions
-    if (channelId && (DraftActions || DraftStore)) {
+    // Strategy 2: DraftStore & DraftActions & FluxDispatcher events
+    if (channelId) {
         try {
             const currentDraft = DraftStore?.getDraft ? DraftStore.getDraft(channelId, 0) || "" : "";
             const updated = (currentDraft ? currentDraft.trimEnd() + " " : "") + tag;
+
             if (typeof DraftActions?.saveDraft === "function") {
                 DraftActions.saveDraft(channelId, updated, 0);
-                inserted = true;
-            } else if (typeof DraftActions?.setDraft === "function") {
-                DraftActions.setDraft(channelId, updated, 0);
-                inserted = true;
-            } else if (typeof DraftActions?.updateDraft === "function") {
-                DraftActions.updateDraft(channelId, updated, 0);
-                inserted = true;
             }
+            if (typeof DraftActions?.setDraft === "function") {
+                DraftActions.setDraft(channelId, updated, 0);
+            }
+            if (typeof DraftActions?.updateDraft === "function") {
+                DraftActions.updateDraft(channelId, updated, 0);
+            }
+
+            FluxDispatcher.dispatch({
+                type: "DRAFT_CHANGE",
+                channelId,
+                draft: updated,
+                draftType: 0,
+            });
         } catch {}
     }
 

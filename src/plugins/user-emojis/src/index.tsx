@@ -20,7 +20,7 @@ function Settings() {
     return (
         <RN.ScrollView style={{ flex: 1, padding: 12 }}>
             <FormSection title="Actions">
-                <FormRow label="Open Emoji Store" onPress={openEmojiModal} />
+                <FormRow label="Open Emoji Store" onPress={openEmojiStore} />
                 <FormRow
                     label="Force Resync"
                     subLabel={`${storage.emojis?.length || 0} emojis cached`}
@@ -82,7 +82,7 @@ export default {
                     displayDescription: "Open Custom Emoji Store",
                     options: [],
                     execute: () => {
-                        openEmojiModal();
+                        openEmojiStore();
                     },
                     applicationId: "-1",
                     inputType: 1,
