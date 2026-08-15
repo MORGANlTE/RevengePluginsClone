@@ -35,14 +35,28 @@ export function getActiveChatInputRef(): any {
 }
 
 export function transformDraftText(text: string): string {
-    // Keep user-friendly :emoji: format clean in the typing field
-    return text;
+    const list: AppEmoji[] = storage.emojis || [];
+    if (typeof text !== "string" || !list.length) return text;
+    const emojiMap = new Map<string, AppEmoji>(list.map((e: AppEmoji) => [e.name.toLowerCase(), e]));
+
+    return text.replace(
+        /(<a?:([A-Za-z0-9_]+):(\d+)>)|;([A-Za-z0-9_]+);|:([A-Za-z0-9_]+):/g,
+        (match, fullTag, tagEmojiName, tagEmojiId, semiName, colonName) => {
+            if (fullTag) return fullTag;
+            const name = (tagEmojiName || semiName || colonName || "").toLowerCase();
+            const found = emojiMap.get(name);
+            if (found) {
+                return `<${found.animated ? "a" : ""}:${found.name}:${found.id}> `;
+            }
+            return match;
+        }
+    );
 }
 
 export function insertEmojiIntoDraft(emoji: AppEmoji, customRef?: any) {
     const channelId = SelectedChannelStore?.getChannelId();
-    // Insert clean, human-readable :name: format
-    const tag = `:${emoji.name}: `;
+    // Full tag prevents Discord's emoticon replacer from turning custom emojis (like :wink:) into standard Unicode 😉
+    const tag = `<${emoji.animated ? "a" : ""}:${emoji.name}:${emoji.id}> `;
     const emojiObj = buildEmojiObj(emoji);
     let inserted = false;
 

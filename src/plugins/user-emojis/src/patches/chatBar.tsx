@@ -57,26 +57,20 @@ export function patchChatBar(): () => void {
         }
     }
 
-    // 1. Primary ChatView Tree Patch: Mounts LiveMessagePreview cleanly above the chatbar
+    // 1. ChatView Tree Hook for chatInputRef capture
     const ChatView = findByTypeName("ChatView");
     if (ChatView) {
         unpatches.push(
             after("type", ChatView, ([props], ret) => {
                 const inputRef = props?.chatInputRef;
                 if (inputRef) hookInputRef(inputRef);
-
-                return React.createElement(
-                    React.Fragment,
-                    {},
-                    React.createElement(LiveMessagePreview, { inputProps: inputRef }),
-                    ret
-                );
+                return ret;
             })
         );
-        logStatus("Patched ChatView with LiveMessagePreview");
+        logStatus("Patched ChatView for input reference");
     }
 
-    // 2. ChatInputGuardWrapper: Injects 💎 button & captures chatInputRef
+    // 2. ChatInputGuardWrapper: Mounts LiveMessagePreview right above chatbar & injects 💎 button
     const ChatInputGuardWrapper = findByName("ChatInputGuardWrapper", false);
     if (ChatInputGuardWrapper) {
         unpatches.push(
@@ -85,6 +79,15 @@ export function patchChatBar(): () => void {
 
                 const inputRef = extractChatInputRef(ret);
                 if (inputRef) hookInputRef(inputRef);
+
+                // Mount LiveMessagePreview right above the chat input box
+                if (Array.isArray(ret.props.children)) {
+                    if (!ret.props.children.some((c: any) => c?.key === "user-emoji-live-preview")) {
+                        ret.props.children.unshift(
+                            React.createElement(LiveMessagePreview, { key: "user-emoji-live-preview", inputProps: inputRef })
+                        );
+                    }
+                }
 
                 const btn = (
                     <RN.TouchableOpacity
@@ -127,7 +130,7 @@ export function patchChatBar(): () => void {
                 }
             })
         );
-        logStatus("Patched ChatInputGuardWrapper for live button injection");
+        logStatus("Patched ChatInputGuardWrapper with LiveMessagePreview and 💎 button");
     }
 
     // 3. Injects into "+" Attachment Sheet Actions (useChatInputActions)

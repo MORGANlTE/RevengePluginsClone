@@ -17,12 +17,12 @@ function encodeMessageContent(content: string, emojis: AppEmoji[]): { text: stri
     const emojiMap = new Map(emojis.map((e) => [e.name.toLowerCase(), e]));
     let shouldProxy = false;
 
-    // Single pass match for <a:name:id>, ;name;, or :name: (Hermes safe, no lookbehinds)
+    // Correct 5 capture groups: 1=fullTag, 2=tagEmojiName, 3=tagEmojiId, 4=semiName, 5=colonName
     const result = content.replace(
-        /(<a?:([A-Za-z0-9_]+):\d+>)|;([A-Za-z0-9_]+);|:([A-Za-z0-9_]+):/g,
-        (match, fullTag, tagName, semiName, colonName) => {
-            const name = (tagName || semiName || colonName || "").toLowerCase();
-            const found = emojiMap.get(name);
+        /(<a?:([A-Za-z0-9_]+):(\d+)>)|;([A-Za-z0-9_]+);|:([A-Za-z0-9_]+):/g,
+        (match, fullTag, tagEmojiName, tagEmojiId, semiName, colonName) => {
+            const name = (tagEmojiName || semiName || colonName || "").toLowerCase();
+            const found = emojiMap.get(name) || (tagEmojiId ? emojis.find((e) => e.id === tagEmojiId) : undefined);
             if (found) {
                 shouldProxy = true;
                 return `;${found.name};`;
@@ -71,11 +71,11 @@ export function patchMessages(): () => void {
                 if (row?.message?.content && loaded.length > 0) {
                     const emojiMap = new Map(loaded.map((e) => [e.name.toLowerCase(), e]));
                     row.message.content = row.message.content.replace(
-                        /(<a?:[A-Za-z0-9_]+:\d+>)|;([A-Za-z0-9_]+);|:([A-Za-z0-9_]+):/g,
-                        (match: string, fullTag: string, semi: string, colon: string) => {
+                        /(<a?:([A-Za-z0-9_]+):(\d+)>)|;([A-Za-z0-9_]+);|:([A-Za-z0-9_]+):/g,
+                        (match: string, fullTag: string, tagEmojiName: string, tagEmojiId: string, semi: string, colon: string) => {
                             if (fullTag) return fullTag;
-                            const name = (semi || colon || "").toLowerCase();
-                            const found = emojiMap.get(name);
+                            const name = (tagEmojiName || semi || colon || "").toLowerCase();
+                            const found = emojiMap.get(name) || (tagEmojiId ? loaded.find((e) => e.id === tagEmojiId) : undefined);
                             if (found) {
                                 return `<${found.animated ? "a" : ""}:${found.name}:${found.id}>`;
                             }
@@ -162,7 +162,7 @@ export function patchMessages(): () => void {
                                             name: "ed",
                                             type: 1,
                                             options: [
-                                                { type: 3, name: "message_id", value: String(messageId) },
+                                                { type: 3, name: "message_id", value: messageId },
                                                 { type: 3, name: "text", value: text },
                                             ],
                                         },
@@ -179,53 +179,8 @@ export function patchMessages(): () => void {
                 return orig.apply(MessageActions, args);
             })
         );
-        logStatus("Patched MessageActions.sendMessage and editMessage for bot proxy routing");
+        logStatus("Patched MessageActions for outgoing emoji messages");
     }
-
-    // 5. FluxDispatcher Interceptor (Chat Bubble Decoding & Bot Ping Forwarder)
-    unpatches.push(
-        instead("dispatch", FluxDispatcher, (args, orig) => {
-            const [event] = args;
-            if (event && (event.type === "MESSAGE_CREATE" || event.type === "MESSAGE_UPDATE")) {
-                try {
-                    const loaded: AppEmoji[] = storage.emojis || [];
-                    if (event.message?.content && loaded.length > 0 && event.message.content.includes(";")) {
-                        const emojiMap = new Map(loaded.map((e) => [e.name.toLowerCase(), e]));
-                        event.message.content = event.message.content.replace(
-                            /;([A-Za-z0-9_]+);/g,
-                            (match: string, name: string) => {
-                                const found = emojiMap.get(name.toLowerCase());
-                                return found ? `<${found.animated ? "a" : ""}:${found.name}:${found.id}>` : match;
-                            }
-                        );
-                    }
-
-                    if (storage.botPingToUserPing && storage.selectedAppId) {
-                        const msg = event.message;
-                        const botId = storage.selectedAppId;
-                        const currentUser = UserStore?.getCurrentUser?.();
-
-                        if (msg && botId && currentUser) {
-                            let isPinged = false;
-                            if (msg.referenced_message?.author?.id === botId) isPinged = true;
-                            if (!isPinged && Array.isArray(msg.mentions) && msg.mentions.some((m: any) => m.id === botId)) {
-                                isPinged = true;
-                            }
-
-                            if (isPinged) {
-                                if (!Array.isArray(msg.mentions)) msg.mentions = [];
-                                if (!msg.mentions.some((m: any) => m.id === currentUser.id)) {
-                                    msg.mentions.push(currentUser);
-                                }
-                            }
-                        }
-                    }
-                } catch {}
-            }
-            return orig.apply(FluxDispatcher, args);
-        })
-    );
-    logStatus("Patched FluxDispatcher for message decoding and bot ping notifications");
 
     return () => unpatches.forEach((u) => u?.());
 }

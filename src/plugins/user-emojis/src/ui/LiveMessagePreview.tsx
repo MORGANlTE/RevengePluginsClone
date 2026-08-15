@@ -100,6 +100,25 @@ export default function LiveMessagePreview({ inputProps }: { inputProps?: any })
         return tokens.some((t) => t.type === "emoji");
     }, [tokens]);
 
+    // Check if message is emoji-only (Jumboji)
+    const isEmojiOnly = React.useMemo(() => {
+        const nonEmojiText = tokens
+            .filter((t) => t.type === "text")
+            .map((t) => t.content.trim())
+            .join("");
+        const emojiCount = tokens.filter((t) => t.type === "emoji").length;
+        return nonEmojiText.length === 0 && emojiCount > 0 && emojiCount <= 8;
+    }, [tokens]);
+
+    // Dynamic sizing: 48px for 1 emoji, 40px for 2-3 emojis, 22px for inline with text
+    const emojiSize = React.useMemo(() => {
+        if (!isEmojiOnly) return 22;
+        const emojiCount = tokens.filter((t) => t.type === "emoji").length;
+        if (emojiCount === 1) return 48;
+        if (emojiCount <= 3) return 40;
+        return 32;
+    }, [isEmojiOnly, tokens]);
+
     if (!hasEmojis || !text.trim()) return null;
 
     const author = UserStore?.getCurrentUser?.();
@@ -109,7 +128,7 @@ export default function LiveMessagePreview({ inputProps }: { inputProps?: any })
     return (
         <RN.View
             style={{
-                backgroundColor: "rgba(20, 21, 24, 0.92)",
+                backgroundColor: "rgba(20, 21, 24, 0.95)",
                 borderRadius: 12,
                 marginHorizontal: 8,
                 marginBottom: 6,
@@ -147,7 +166,7 @@ export default function LiveMessagePreview({ inputProps }: { inputProps?: any })
                 />
 
                 <RN.View style={{ flex: 1 }}>
-                    <RN.View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                    <RN.View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
                         <RN.Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "bold" }}>
                             {authorName}
                         </RN.Text>
@@ -166,9 +185,10 @@ export default function LiveMessagePreview({ inputProps }: { inputProps?: any })
                                             uri: getEmojiCdnUrl(token.emoji.id, Boolean(token.emoji.animated)),
                                         }}
                                         style={{
-                                            width: 22,
-                                            height: 22,
-                                            marginHorizontal: 2,
+                                            width: emojiSize,
+                                            height: emojiSize,
+                                            marginHorizontal: isEmojiOnly ? 4 : 2,
+                                            marginVertical: isEmojiOnly ? 2 : 0,
                                         }}
                                         resizeMode="contain"
                                     />
