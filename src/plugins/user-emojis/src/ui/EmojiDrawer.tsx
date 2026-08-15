@@ -379,6 +379,7 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                         </RN.View>
                     ) : (
                         <RN.FlatList
+                            key="emoji-grid-cols-6"
                             data={filteredEmojis}
                             keyExtractor={(item) => item.id}
                             renderItem={renderEmojiItem}
@@ -407,9 +408,11 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                         </RN.Text>
                     )}
                     <RN.FlatList
+                        key="market-list-cols-1"
                         data={remotePacks}
                         keyExtractor={(item) => item.name}
                         renderItem={renderPackItem}
+                        numColumns={1}
                         initialNumToRender={8}
                         maxToRenderPerBatch={6}
                         keyboardShouldPersistTaps="always"
