@@ -14,7 +14,7 @@ import {
     SelectedChannelStore,
     syncEmojisFromBot,
 } from "./botApi";
-import { insertEmojiIntoDraft } from "./draft";
+import { getActiveChatInputRef, insertEmojiIntoDraft } from "./draft";
 import { logStatus, PLUGIN_TAG } from "./logger";
 
 const { ActionSheet: _ActionSheet } = findByProps("ActionSheet");
@@ -449,18 +449,40 @@ export function closeEmojiModal() {
 }
 
 export function toggleEmojiStore() {
+    RN.Keyboard.dismiss();
+    const activeRef = getActiveChatInputRef();
+    if (activeRef?.current) {
+        try {
+            activeRef.current.blur?.();
+        } catch {}
+    }
+
     if (drawerToggleFn) {
-        drawerToggleFn((prev) => !prev);
-        logStatus("Toggled inline Emoji Drawer");
+        drawerToggleFn((prev) => {
+            const next = !prev;
+            if (next) {
+                RN.Keyboard.dismiss();
+            }
+            return next;
+        });
+        logStatus("Toggled inline Emoji Drawer (dismissed keyboard)");
         return;
     }
     openEmojiModal();
 }
 
 export function openEmojiStore() {
+    RN.Keyboard.dismiss();
+    const activeRef = getActiveChatInputRef();
+    if (activeRef?.current) {
+        try {
+            activeRef.current.blur?.();
+        } catch {}
+    }
+
     if (drawerToggleFn) {
         drawerToggleFn(true);
-        logStatus("Opened inline Emoji Drawer");
+        logStatus("Opened inline Emoji Drawer (dismissed keyboard)");
         return;
     }
     openEmojiModal();

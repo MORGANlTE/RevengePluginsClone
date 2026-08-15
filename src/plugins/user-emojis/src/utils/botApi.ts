@@ -2,10 +2,10 @@ import { findByProps, findByStoreName } from "@vendetta/metro";
 import { FluxDispatcher } from "@vendetta/metro/common";
 import { storage } from "@vendetta/plugin";
 import { showToast } from "@vendetta/ui/toasts";
-import { AppEmoji, CommandName, DiscoveredApp, EmojiPack } from "../types";
+import { AppEmoji, DiscoveredApp, EmojiPack } from "../types";
 import { logStatus, PLUGIN_TAG } from "./logger";
 
-export const REQUIRED_COMMANDS: CommandName[] = [
+export const REQUIRED_COMMANDS = [
     "e",
     "ed",
     "esync",
@@ -44,61 +44,50 @@ export function preloadRemotePacks() {
         .catch(() => {});
 }
 
-export function getEmojiCdnUrl(id: string, animated = false): string {
+export function getEmojiCdnUrl(id: string, animated: boolean = false): string {
     if (!id) return "";
     if (id.startsWith("http")) return id;
     return `https://cdn.discordapp.com/emojis/${id}${animated ? "?animated=true&size=64" : "?size=64"}`;
 }
 
-export function parseRawEmojiTag(rawTag: string) {
+export function parseRawEmojiTag(rawTag: string): { id: string; name: string; animated: boolean; url: string } | null {
     if (!rawTag) return null;
     const trimmed = rawTag.trim();
     if (trimmed.startsWith("http")) {
         return { id: "", name: "", animated: false, url: trimmed };
     }
-
     const matchWithBrackets = trimmed.match(/^<(a)?:([A-Za-z0-9_]+):(\d+)>$/);
     if (matchWithBrackets) {
         const isAnimated = matchWithBrackets[1] === "a";
         const name = matchWithBrackets[2];
         const id = matchWithBrackets[3];
-        return {
-            id,
-            name,
-            animated: isAnimated,
-            url: getEmojiCdnUrl(id, isAnimated),
-        };
+        return { id, name, animated: isAnimated, url: getEmojiCdnUrl(id, isAnimated) };
     }
-
     const matchWithoutBrackets = trimmed.match(/^(a)?:?([A-Za-z0-9_]+):(\d+)$/);
     if (matchWithoutBrackets) {
         const isAnimated = matchWithoutBrackets[1] === "a";
         const name = matchWithoutBrackets[2];
         const id = matchWithoutBrackets[3];
-        return {
-            id,
-            name,
-            animated: isAnimated,
-            url: getEmojiCdnUrl(id, isAnimated),
-        };
+        return { id, name, animated: isAnimated, url: getEmojiCdnUrl(id, isAnimated) };
     }
-
     return null;
 }
 
 export function buildEmojiObj(emoji: AppEmoji) {
+    const isAnimated = Boolean(emoji.animated);
+    const url = getEmojiCdnUrl(emoji.id, isAnimated);
     return {
         id: emoji.id,
         name: emoji.name,
         originalName: emoji.name,
-        animated: Boolean(emoji.animated),
+        animated: isAnimated,
         available: true,
         managed: false,
         require_colons: true,
         roles: [],
-        url: getEmojiCdnUrl(emoji.id, Boolean(emoji.animated)),
+        url: url,
         allNamesString: `:${emoji.name}:`,
-        type: 3,
+        type: 1,
         category: USER_PICKER_CATEGORY,
         categoryName: USER_PICKER_CATEGORY,
         source: "discord",
@@ -107,6 +96,7 @@ export function buildEmojiObj(emoji: AppEmoji) {
         locked: false,
         disabled: false,
         guildId: "UserAppEmojis",
+        guild_id: "UserAppEmojis",
     };
 }
 
@@ -114,7 +104,11 @@ export function getActiveApp(): DiscoveredApp | undefined {
     return (storage.apps || []).find((a: DiscoveredApp) => a.appId === storage.selectedAppId);
 }
 
-export async function dispatchAppCommand(cmdName: CommandName, channelId: string, options: any[] = []) {
+export async function dispatchAppCommand(
+    cmdName: string,
+    channelId: string,
+    options: any[] = []
+) {
     const app = getActiveApp();
     if (!app || !app.commands[cmdName]) {
         showToast(`${PLUGIN_TAG} Command /${cmdName} not found`, 2);
@@ -123,7 +117,7 @@ export async function dispatchAppCommand(cmdName: CommandName, channelId: string
     }
 
     const guildId = SelectedGuildStore?.getGuildId() || undefined;
-    const cmd = app.commands[cmdName]!;
+    const cmd = app.commands[cmdName];
 
     try {
         await RestAPI.post({
@@ -152,7 +146,7 @@ export async function dispatchAppCommand(cmdName: CommandName, channelId: string
     }
 }
 
-export async function syncEmojisFromBot(manual = false) {
+export async function syncEmojisFromBot(manual: boolean = false) {
     try {
         logStatus("Initiating background emoji sync from bot...");
         if (!storage.selectedAppId) {
@@ -163,9 +157,12 @@ export async function syncEmojisFromBot(manual = false) {
             for (const cmd of cmds) {
                 const appId = String(cmd?.application_id ?? "");
                 if (!appId) continue;
-                const app = appMap.get(appId) ?? { appId, appName: cmd?.application?.name || "App", commands: {} };
-                const name = String(cmd?.name ?? "").toLowerCase() as CommandName;
-
+                const app = appMap.get(appId) ?? {
+                    appId,
+                    appName: cmd?.application?.name || "App",
+                    commands: {},
+                };
+                const name = String(cmd?.name ?? "").toLowerCase();
                 if (REQUIRED_COMMANDS.includes(name)) {
                     app.commands[name] = { id: cmd.id, version: cmd.version, name };
                 }
@@ -187,12 +184,13 @@ export async function syncEmojisFromBot(manual = false) {
             logStatus("Sync skipped: No active app or /esync command found", true);
             return;
         }
-        const activeApp = app;
 
+        const activeApp = app;
         const dmReq = await RestAPI.post({
             url: "/users/@me/channels",
             body: { recipients: [activeApp.appId] },
         });
+
         const dmChannelId = dmReq?.body?.id;
         if (!dmChannelId) return;
 
@@ -215,6 +213,7 @@ export async function syncEmojisFromBot(manual = false) {
                     }
                 }
             }
+
             FluxDispatcher.subscribe("MESSAGE_CREATE", onMsg);
         });
 
@@ -237,7 +236,7 @@ export async function syncEmojisFromBot(manual = false) {
 
         const res = await jsonPromise;
         const emojisReq = await fetch(res.url);
-        const data: AppEmoji[] = await emojisReq.json();
+        const data = await emojisReq.json();
 
         storage.emojis = data;
         logStatus(`Successfully synced ${data.length} custom emojis!`);

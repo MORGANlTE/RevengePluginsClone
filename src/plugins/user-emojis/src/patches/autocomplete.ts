@@ -68,7 +68,7 @@ export function patchAutocomplete(): () => void {
     }
 
     if (EmojiStore) {
-        // 1. Search (Autocomplete)
+        // 1. Search (Autocomplete & Query Matches)
         if (typeof EmojiStore.searchWithoutFetchingLatest === "function") {
             unpatches.push(
                 instead("searchWithoutFetchingLatest", EmojiStore, (args, orig) => {
@@ -78,27 +78,37 @@ export function patchAutocomplete(): () => void {
                     const loaded: AppEmoji[] = storage.emojis || [];
 
                     if (!query || !loaded.length) return result;
-                    if (!Array.isArray(result.unlocked)) result.unlocked = [];
 
-                    const existingIds = new Set(result.unlocked.map((e: any) => String(e?.id ?? "")));
-                    const customMatches: any[] = [];
+                    const customMatches = loaded
+                        .filter((e) => e.name.toLowerCase().includes(query))
+                        .map((e) => buildEmojiObj(e));
 
-                    for (const emoji of loaded) {
-                        if (emoji.name.toLowerCase().includes(query) && !existingIds.has(emoji.id)) {
-                            customMatches.push(buildEmojiObj(emoji));
+                    if (!customMatches.length) return result;
+
+                    if (Array.isArray(result)) {
+                        return [...customMatches, ...result];
+                    }
+
+                    if (typeof result === "object") {
+                        if (!Array.isArray(result.unlocked)) result.unlocked = [];
+                        const existingIds = new Set(result.unlocked.map((e: any) => String(e?.id ?? "")));
+                        for (const m of customMatches) {
+                            if (!existingIds.has(m.id)) {
+                                result.unlocked.unshift(m);
+                            }
+                        }
+                        if (Array.isArray(result.emojis)) {
+                            result.emojis.unshift(...customMatches);
                         }
                     }
 
-                    if (customMatches.length) {
-                        result.unlocked = [...customMatches, ...result.unlocked];
-                    }
                     return result;
                 })
             );
             logStatus("Patched EmojiStore.searchWithoutFetchingLatest");
         }
 
-        // 2. getCustomEmojiById
+        // 2. getCustomEmojiById & getUsableCustomEmojiById
         if (typeof EmojiStore.getCustomEmojiById === "function") {
             unpatches.push(
                 instead("getCustomEmojiById", EmojiStore, (args, orig) => {
@@ -112,7 +122,6 @@ export function patchAutocomplete(): () => void {
             logStatus("Patched EmojiStore.getCustomEmojiById");
         }
 
-        // 3. getUsableCustomEmojiById
         if (typeof EmojiStore.getUsableCustomEmojiById === "function") {
             unpatches.push(
                 instead("getUsableCustomEmojiById", EmojiStore, (args, orig) => {
@@ -126,7 +135,7 @@ export function patchAutocomplete(): () => void {
             logStatus("Patched EmojiStore.getUsableCustomEmojiById");
         }
 
-        // 4. getByName & getUsableEmojiByAnyName
+        // 3. getByName & getUsableEmojiByAnyName & getCustomEmojisByName
         if (typeof EmojiStore.getByName === "function") {
             unpatches.push(
                 instead("getByName", EmojiStore, (args, orig) => {
@@ -151,8 +160,27 @@ export function patchAutocomplete(): () => void {
             );
             logStatus("Patched EmojiStore.getUsableEmojiByAnyName");
         }
+        if (typeof EmojiStore.getCustomEmojisByName === "function") {
+            unpatches.push(
+                instead("getCustomEmojisByName", EmojiStore, (args, orig) => {
+                    const [name] = args;
+                    const res = orig.apply(EmojiStore, args) || {};
+                    const loaded: AppEmoji[] = storage.emojis || [];
+                    const found = loaded.find((e) => e.name.toLowerCase() === String(name).toLowerCase());
+                    if (found) {
+                        const obj = buildEmojiObj(found);
+                        if (Array.isArray(res)) {
+                            res.push(obj);
+                        } else if (typeof res === "object") {
+                            res[found.id] = obj;
+                        }
+                    }
+                    return res;
+                })
+            );
+        }
 
-        // 5. isEmojiUsable
+        // 4. isEmojiUsable & isEmojiFilteredOrLocked & isEmojiDisabled & isEmojiPremiumLocked
         if (typeof EmojiStore.isEmojiUsable === "function") {
             unpatches.push(
                 instead("isEmojiUsable", EmojiStore, (args, orig) => {
@@ -167,7 +195,6 @@ export function patchAutocomplete(): () => void {
             logStatus("Patched EmojiStore.isEmojiUsable");
         }
 
-        // 6. isEmojiFilteredOrLocked & isEmojiDisabled & isEmojiPremiumLocked
         if (typeof EmojiStore.isEmojiFilteredOrLocked === "function") {
             unpatches.push(
                 instead("isEmojiFilteredOrLocked", EmojiStore, (args, orig) => {
@@ -205,7 +232,7 @@ export function patchAutocomplete(): () => void {
             );
         }
 
-        // 7. getGuildEmoji
+        // 5. getGuildEmoji
         if (typeof EmojiStore.getGuildEmoji === "function") {
             unpatches.push(
                 instead("getGuildEmoji", EmojiStore, (args, orig) => {
@@ -218,14 +245,59 @@ export function patchAutocomplete(): () => void {
             );
         }
 
-        // 8. getEmojis
+        // 6. getDisambiguatedEmojiContext
+        if (typeof EmojiStore.getDisambiguatedEmojiContext === "function") {
+            unpatches.push(
+                after("getDisambiguatedEmojiContext", EmojiStore, (_, res) => {
+                    const loaded: AppEmoji[] = storage.emojis || [];
+                    if (!loaded.length || !res) return res;
+                    const customObjects = loaded.map((e) => buildEmojiObj(e));
+
+                    if (Array.isArray(res?.emojis)) {
+                        for (const emoji of customObjects) {
+                            if (!res.emojis.some((e: any) => e?.id === emoji.id)) {
+                                res.emojis.push(emoji);
+                            }
+                        }
+                    }
+                    if (Array.isArray(res?.usableEmojis)) {
+                        for (const emoji of customObjects) {
+                            if (!res.usableEmojis.some((e: any) => e?.id === emoji.id)) {
+                                res.usableEmojis.push(emoji);
+                            }
+                        }
+                    }
+                    return res;
+                })
+            );
+        }
+
+        // 7. getEmojis (handles both flat array and guild-keyed dictionary)
         if (typeof EmojiStore.getEmojis === "function") {
             unpatches.push(
                 after("getEmojis", EmojiStore, (_, res) => {
                     const loaded: AppEmoji[] = storage.emojis || [];
-                    if (Array.isArray(res) && loaded.length > 0) {
-                        for (const emoji of loaded) {
-                            res.push(buildEmojiObj(emoji));
+                    if (!loaded.length || !res) return res;
+                    const customObjects = loaded.map((e) => buildEmojiObj(e));
+
+                    if (Array.isArray(res)) {
+                        for (const emoji of customObjects) {
+                            if (!res.some((e: any) => e?.id === emoji.id)) {
+                                res.push(emoji);
+                            }
+                        }
+                    } else if (typeof res === "object") {
+                        if (!Array.isArray(res["UserAppEmojis"])) {
+                            res["UserAppEmojis"] = [];
+                        }
+                        res["UserAppEmojis"] = customObjects;
+                        if (!Array.isArray(res["custom"])) {
+                            res["custom"] = [];
+                        }
+                        for (const emoji of customObjects) {
+                            if (!res["custom"].some((e: any) => e?.id === emoji.id)) {
+                                res["custom"].push(emoji);
+                            }
                         }
                     }
                     return res;
