@@ -4,6 +4,7 @@ import { after, before } from "@vendetta/patcher";
 import { getAssetIDByName } from "@vendetta/ui/assets";
 import { findInReactTree } from "@vendetta/utils";
 import EmojiDrawer from "../ui/EmojiDrawer";
+import LiveMessagePreview from "../ui/LiveMessagePreview";
 import { extractChatInputRef, setActiveChatInputRef, transformDraftText } from "../utils/draft";
 import { logStatus } from "../utils/logger";
 import { closeEmojiModal, toggleEmojiStore } from "../utils/navigation";
@@ -57,7 +58,7 @@ export function patchChatBar(): () => void {
         }
     }
 
-    // 1. Primary ChatView Tree Patch: Mounts EmojiDrawer directly under Chat
+    // 1. Primary ChatView Tree Patch: Mounts LiveMessagePreview and EmojiDrawer directly with ChatView
     const ChatView = findByTypeName("ChatView");
     if (ChatView) {
         unpatches.push(
@@ -68,12 +69,13 @@ export function patchChatBar(): () => void {
                 return React.createElement(
                     React.Fragment,
                     {},
+                    React.createElement(LiveMessagePreview, { inputProps: inputRef }),
                     ret,
                     React.createElement(EmojiDrawer, { inputProps: inputRef })
                 );
             })
         );
-        logStatus("Patched ChatView with EmojiDrawer");
+        logStatus("Patched ChatView with LiveMessagePreview and EmojiDrawer");
     }
 
     // 2. ChatInputGuardWrapper: Injects 💎 button & captures chatInputRef

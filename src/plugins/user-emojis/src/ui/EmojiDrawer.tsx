@@ -21,16 +21,24 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
     const [selectedPack, setSelectedPack] = React.useState("All");
     const [remotePacks, setRemotePacks] = React.useState<EmojiPack[]>(getRemotePacksCached());
     const [loadingPacks, setLoadingPacks] = React.useState(false);
+    const isSearchFocusedRef = React.useRef(false);
 
     const emojis: AppEmoji[] = storage.emojis || [];
-    const DRAWER_HEIGHT = 250;
+    const DRAWER_HEIGHT = 240;
 
     React.useEffect(() => {
         registerDrawerToggle(setIsOpen);
         preloadRemotePacks();
 
+        const kbShow = RN.Keyboard.addListener("keyboardDidShow", () => {
+            if (!isSearchFocusedRef.current) {
+                setIsOpen(false);
+            }
+        });
+
         return () => {
             registerDrawerToggle(null);
+            kbShow.remove();
         };
     }, []);
 
@@ -323,6 +331,12 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                         value={search}
                         placeholder="Search emojis..."
                         placeholderTextColor="#888"
+                        onFocus={() => {
+                            isSearchFocusedRef.current = true;
+                        }}
+                        onBlur={() => {
+                            isSearchFocusedRef.current = false;
+                        }}
                         onChangeText={(txt: string) => setSearch(txt)}
                         style={{
                             backgroundColor: "rgba(0, 0, 0, 0.35)",
@@ -379,12 +393,14 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                             numColumns={7}
                             initialNumToRender={35}
                             maxToRenderPerBatch={21}
-                            windowSize={5}
-                            removeClippedSubviews={true}
+                            windowSize={7}
+                            removeClippedSubviews={false}
                             nestedScrollEnabled={true}
+                            scrollEnabled={true}
+                            showsVerticalScrollIndicator={true}
                             keyboardShouldPersistTaps="always"
                             style={{ flex: 1 }}
-                            contentContainerStyle={{ paddingBottom: 4 }}
+                            contentContainerStyle={{ paddingBottom: 16 }}
                         />
                     )}
                 </RN.View>
@@ -392,12 +408,12 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                 /* Tab 2: Packs Market */
                 <RN.View style={{ flex: 1 }}>
                     {loadingPacks && (
-                        <RN.Text style={{ color: "#aaa", textAlign: "center", marginVertical: 8, fontSize: 11 }}>
+                        <RN.Text style={{ color: "#aaa", textAlign: "center", marginVertical: 12, fontSize: 11 }}>
                             Loading remote packs...
                         </RN.Text>
                     )}
                     {!loadingPacks && remotePacks.length === 0 && (
-                        <RN.Text style={{ color: "#aaa", textAlign: "center", marginVertical: 8, fontSize: 11 }}>
+                        <RN.Text style={{ color: "#aaa", textAlign: "center", marginVertical: 12, fontSize: 11 }}>
                             No remote packs found.
                         </RN.Text>
                     )}
@@ -410,9 +426,11 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                         initialNumToRender={8}
                         maxToRenderPerBatch={6}
                         nestedScrollEnabled={true}
+                        scrollEnabled={true}
+                        showsVerticalScrollIndicator={true}
                         keyboardShouldPersistTaps="always"
                         style={{ flex: 1 }}
-                        contentContainerStyle={{ paddingBottom: 4 }}
+                        contentContainerStyle={{ paddingBottom: 16 }}
                     />
                 </RN.View>
             )}
