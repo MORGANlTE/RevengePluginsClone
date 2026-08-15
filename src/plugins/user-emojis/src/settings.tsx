@@ -3,14 +3,32 @@ import { Forms } from "@vendetta/ui/components";
 import { useProxy } from "@vendetta/storage";
 import { storage } from "@vendetta/plugin";
 import { syncEmojisFromBot } from "./index";
+import { EmojiStoreModal } from "./storeModal";
+import { findByProps } from "@vendetta/metro";
 
 const { FormSection, FormSwitchRow, FormInput, FormRow } = Forms;
+const LazyActionSheet = findByProps("openLazy");
 
 export default function Settings() {
     useProxy(storage);
 
     return (
         <RN.ScrollView style={{ flex: 1, padding: 12 }}>
+            <FormSection title="Custom Emoji Store">
+                <FormRow
+                    label="Open Emoji Store Picker"
+                    subLabel="Browse custom emojis and community packs"
+                    onPress={() => {
+                        if (LazyActionSheet?.openLazy) {
+                            LazyActionSheet.openLazy(
+                                async () => () => <EmojiStoreModal />,
+                                "CustomEmojiStoreSheet"
+                            );
+                        }
+                    }}
+                />
+            </FormSection>
+
             <FormSection title="Configuration">
                 <FormInput
                     title="User App ID"
@@ -18,6 +36,14 @@ export default function Settings() {
                     placeholder="Enter Application ID"
                     onChange={(val: string) => {
                         storage.selectedAppId = val.trim();
+                    }}
+                />
+                <FormInput
+                    title="Pack Index URL"
+                    value={storage.packIndexUrl || ""}
+                    placeholder="https://raw.githubusercontent.com/.../packs_index.json"
+                    onChange={(val: string) => {
+                        storage.packIndexUrl = val.trim();
                     }}
                 />
                 <FormSwitchRow
