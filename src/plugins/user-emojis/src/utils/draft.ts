@@ -35,30 +35,14 @@ export function getActiveChatInputRef(): any {
 }
 
 export function transformDraftText(text: string): string {
-    const list: AppEmoji[] = storage.emojis || [];
-    if (typeof text !== "string" || !list.length) return text;
-    const emojiMap = new Map<string, AppEmoji>(list.map((e: AppEmoji) => [e.name.toLowerCase(), e]));
-
-    // Match either full tags <a:name:id>, or semicolon ;name;, or colon :name: (Hermes safe, no lookbehinds)
-    return text.replace(
-        /(<a?:[A-Za-z0-9_]+:\d+>)|;([A-Za-z0-9_]+);|:([A-Za-z0-9_]+):/g,
-        (match, fullTag, semiName, colonName) => {
-            if (fullTag) {
-                return fullTag;
-            }
-            const name = (semiName || colonName || "").toLowerCase();
-            const found = emojiMap.get(name);
-            if (found) {
-                return `<${found.animated ? "a" : ""}:${found.name}:${found.id}>`;
-            }
-            return match;
-        }
-    );
+    // Keep user-friendly :emoji: format clean in the typing field
+    return text;
 }
 
 export function insertEmojiIntoDraft(emoji: AppEmoji, customRef?: any) {
     const channelId = SelectedChannelStore?.getChannelId();
-    const tag = `<${emoji.animated ? "a" : ""}:${emoji.name}:${emoji.id}> `;
+    // Insert clean, human-readable :name: format
+    const tag = `:${emoji.name}: `;
     const emojiObj = buildEmojiObj(emoji);
     let inserted = false;
 
@@ -73,18 +57,11 @@ export function insertEmojiIntoDraft(emoji: AppEmoji, customRef?: any) {
                 : (DraftStore?.getDraft ? DraftStore.getDraft(channelId, 0) || "" : "");
             const updated = (currentText ? currentText.trimEnd() + " " : "") + tag;
 
-            // Direct native emoji insert (renders native rich emoji in chatbar)
-            if (typeof inputTarget.insertEmoji === "function") {
-                inputTarget.insertEmoji(emojiObj);
-                inserted = true;
-                logStatus(`inputTarget.insertEmoji executed for :${emoji.name}:`);
-            } else if (typeof inputTarget.insertText === "function") {
+            if (typeof inputTarget.insertText === "function") {
                 inputTarget.insertText(tag);
                 inserted = true;
-                logStatus(`inputTarget.insertText executed for :${emoji.name}:`);
             }
 
-            // Wrapper text handlers
             if (typeof inputTarget.handleTextChanged === "function") {
                 inputTarget.handleTextChanged(updated);
                 inserted = true;
@@ -102,11 +79,10 @@ export function insertEmojiIntoDraft(emoji: AppEmoji, customRef?: any) {
                 inserted = true;
             }
 
-            // Inner native component update if available
             const inner = inputTarget.ref?.current || inputTarget._nativeRef;
             if (inner) {
-                if (typeof inner.insertEmoji === "function") {
-                    inner.insertEmoji(emojiObj);
+                if (typeof inner.insertText === "function") {
+                    inner.insertText(tag);
                     inserted = true;
                 }
                 if (typeof inner.handleTextChanged === "function") {
@@ -123,14 +99,12 @@ export function insertEmojiIntoDraft(emoji: AppEmoji, customRef?: any) {
         }
     }
 
-    // 2. ComponentDispatch Events (INSERT_EMOJI and INSERT_TEXT)
+    // 2. ComponentDispatch Events
     try {
         if (ComponentDispatch?.dispatchToLastSubscribed) {
-            ComponentDispatch.dispatchToLastSubscribed("INSERT_EMOJI", { emoji: emojiObj });
             ComponentDispatch.dispatchToLastSubscribed("INSERT_TEXT", { plainText: tag, rawText: tag });
             inserted = true;
         } else if (ComponentDispatch?.dispatch) {
-            ComponentDispatch.dispatch("INSERT_EMOJI", { emoji: emojiObj });
             ComponentDispatch.dispatch("INSERT_TEXT", { plainText: tag, rawText: tag });
             inserted = true;
         }
@@ -146,14 +120,6 @@ export function insertEmojiIntoDraft(emoji: AppEmoji, customRef?: any) {
 
     // 4. FluxDispatcher & DraftStore Synchronization
     if (channelId) {
-        try {
-            FluxDispatcher.dispatch({
-                type: "EXPRESSION_PICKER_EMOJI_SELECT",
-                channelId,
-                emoji: emojiObj,
-            });
-        } catch {}
-
         try {
             const currentDraft = DraftStore?.getDraft ? DraftStore.getDraft(channelId, 0) || "" : "";
             const updated = (currentDraft ? currentDraft.trimEnd() + " " : "") + tag;

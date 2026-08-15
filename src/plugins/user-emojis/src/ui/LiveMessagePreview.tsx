@@ -44,7 +44,7 @@ export default function LiveMessagePreview({ inputProps }: { inputProps?: any })
         }
     }, [inputProps]);
 
-    // Parse content to replace ;name; and :name: with full tags <a:name:id>
+    // Parse content to replace :name: and ;name; with full tags <a:name:id> for Discord's native renderer
     const parsedContent = React.useMemo(() => {
         if (!rawText || typeof rawText !== "string") return "";
         const loaded: AppEmoji[] = storage.emojis || [];
