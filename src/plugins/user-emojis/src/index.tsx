@@ -9,7 +9,7 @@ import { patchMessageActions } from "./patches/messageActions";
 import { patchMessages } from "./patches/messages";
 import { preloadRemotePacks, syncEmojisFromBot } from "./utils/botApi";
 import { logStatus } from "./utils/logger";
-import { openEmojiModal } from "./utils/navigation";
+import { openEmojiStore } from "./utils/navigation";
 
 const { FormSection, FormSwitchRow, FormInput, FormRow } = Forms;
 let unpatches: (() => void)[] = [];
