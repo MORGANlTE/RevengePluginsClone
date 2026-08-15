@@ -10,7 +10,8 @@ export function patchAutocomplete(): () => void {
 
     const GuildStore = findByStoreName("GuildStore");
     const EmojiStore = findByStoreName("EmojiStore") || findByProps("getCustomEmojiById", "getEmojis");
-    const EmojiPermissions = findByProps("canUseEmojisEverywhere", "canUseAnimatedEmojis") ||
+    const EmojiPermissions =
+        findByProps("canUseEmojisEverywhere", "canUseAnimatedEmojis") ||
         findByProps("canUseCustomEmojisEverywhere") ||
         findByProps("isEmojiFilteredOrLocked");
 
@@ -20,7 +21,7 @@ export function patchAutocomplete(): () => void {
                 if (args[0] === "UserAppEmojis") {
                     return {
                         id: "UserAppEmojis",
-                        name: USER_PICKER_CATEGORY,
+                        name: "User App Plugin",
                         getIconURL: () => null,
                     };
                 }
@@ -32,22 +33,16 @@ export function patchAutocomplete(): () => void {
         logStatus("Failed to find GuildStore", true);
     }
 
-    // Unlocks emoji rendering permissions in chat input
+    // Unlocks emoji permissions globally for chat input rendering
     if (EmojiPermissions) {
         if (typeof EmojiPermissions.canUseEmojisEverywhere === "function") {
-            unpatches.push(
-                instead("canUseEmojisEverywhere", EmojiPermissions, () => true)
-            );
+            unpatches.push(instead("canUseEmojisEverywhere", EmojiPermissions, () => true));
         }
         if (typeof EmojiPermissions.canUseCustomEmojisEverywhere === "function") {
-            unpatches.push(
-                instead("canUseCustomEmojisEverywhere", EmojiPermissions, () => true)
-            );
+            unpatches.push(instead("canUseCustomEmojisEverywhere", EmojiPermissions, () => true));
         }
         if (typeof EmojiPermissions.canUseAnimatedEmojis === "function") {
-            unpatches.push(
-                instead("canUseAnimatedEmojis", EmojiPermissions, () => true)
-            );
+            unpatches.push(instead("canUseAnimatedEmojis", EmojiPermissions, () => true));
         }
         if (typeof EmojiPermissions.isEmojiFilteredOrLocked === "function") {
             unpatches.push(
@@ -59,10 +54,21 @@ export function patchAutocomplete(): () => void {
                 })
             );
         }
+        if (typeof EmojiPermissions.isEmojiDisabled === "function") {
+            unpatches.push(
+                instead("isEmojiDisabled", EmojiPermissions, (args, orig) => {
+                    const [emoji] = args;
+                    const loaded: AppEmoji[] = storage.emojis || [];
+                    if (emoji && loaded.some((e) => e.id === emoji.id)) return false;
+                    return orig.apply(EmojiPermissions, args);
+                })
+            );
+        }
         logStatus("Patched EmojiPermissions for in-chatbar emoji rendering");
     }
 
     if (EmojiStore) {
+        // 1. Search (Autocomplete)
         if (typeof EmojiStore.searchWithoutFetchingLatest === "function") {
             unpatches.push(
                 instead("searchWithoutFetchingLatest", EmojiStore, (args, orig) => {
@@ -92,6 +98,7 @@ export function patchAutocomplete(): () => void {
             logStatus("Patched EmojiStore.searchWithoutFetchingLatest");
         }
 
+        // 2. getCustomEmojiById
         if (typeof EmojiStore.getCustomEmojiById === "function") {
             unpatches.push(
                 instead("getCustomEmojiById", EmojiStore, (args, orig) => {
@@ -105,6 +112,7 @@ export function patchAutocomplete(): () => void {
             logStatus("Patched EmojiStore.getCustomEmojiById");
         }
 
+        // 3. getUsableCustomEmojiById
         if (typeof EmojiStore.getUsableCustomEmojiById === "function") {
             unpatches.push(
                 instead("getUsableCustomEmojiById", EmojiStore, (args, orig) => {
@@ -118,6 +126,7 @@ export function patchAutocomplete(): () => void {
             logStatus("Patched EmojiStore.getUsableCustomEmojiById");
         }
 
+        // 4. getByName & getUsableEmojiByAnyName
         if (typeof EmojiStore.getByName === "function") {
             unpatches.push(
                 instead("getByName", EmojiStore, (args, orig) => {
@@ -130,7 +139,20 @@ export function patchAutocomplete(): () => void {
             );
             logStatus("Patched EmojiStore.getByName");
         }
+        if (typeof EmojiStore.getUsableEmojiByAnyName === "function") {
+            unpatches.push(
+                instead("getUsableEmojiByAnyName", EmojiStore, (args, orig) => {
+                    const [name] = args;
+                    const loaded: AppEmoji[] = storage.emojis || [];
+                    const found = loaded.find((e) => e.name.toLowerCase() === String(name).toLowerCase());
+                    if (found) return buildEmojiObj(found);
+                    return orig.apply(EmojiStore, args);
+                })
+            );
+            logStatus("Patched EmojiStore.getUsableEmojiByAnyName");
+        }
 
+        // 5. isEmojiUsable
         if (typeof EmojiStore.isEmojiUsable === "function") {
             unpatches.push(
                 instead("isEmojiUsable", EmojiStore, (args, orig) => {
@@ -145,6 +167,7 @@ export function patchAutocomplete(): () => void {
             logStatus("Patched EmojiStore.isEmojiUsable");
         }
 
+        // 6. isEmojiFilteredOrLocked & isEmojiDisabled & isEmojiPremiumLocked
         if (typeof EmojiStore.isEmojiFilteredOrLocked === "function") {
             unpatches.push(
                 instead("isEmojiFilteredOrLocked", EmojiStore, (args, orig) => {
@@ -157,7 +180,45 @@ export function patchAutocomplete(): () => void {
                 })
             );
         }
+        if (typeof EmojiStore.isEmojiDisabled === "function") {
+            unpatches.push(
+                instead("isEmojiDisabled", EmojiStore, (args, orig) => {
+                    const [emoji] = args;
+                    const loaded: AppEmoji[] = storage.emojis || [];
+                    if (emoji && loaded.some((e) => e.id === emoji.id)) {
+                        return false;
+                    }
+                    return orig.apply(EmojiStore, args);
+                })
+            );
+        }
+        if (typeof EmojiStore.isEmojiPremiumLocked === "function") {
+            unpatches.push(
+                instead("isEmojiPremiumLocked", EmojiStore, (args, orig) => {
+                    const [emoji] = args;
+                    const loaded: AppEmoji[] = storage.emojis || [];
+                    if (emoji && loaded.some((e) => e.id === emoji.id)) {
+                        return false;
+                    }
+                    return orig.apply(EmojiStore, args);
+                })
+            );
+        }
 
+        // 7. getGuildEmoji
+        if (typeof EmojiStore.getGuildEmoji === "function") {
+            unpatches.push(
+                instead("getGuildEmoji", EmojiStore, (args, orig) => {
+                    if (args[0] === "UserAppEmojis") {
+                        const loaded: AppEmoji[] = storage.emojis || [];
+                        return loaded.map((e) => buildEmojiObj(e));
+                    }
+                    return orig.apply(EmojiStore, args);
+                })
+            );
+        }
+
+        // 8. getEmojis
         if (typeof EmojiStore.getEmojis === "function") {
             unpatches.push(
                 after("getEmojis", EmojiStore, (_, res) => {
