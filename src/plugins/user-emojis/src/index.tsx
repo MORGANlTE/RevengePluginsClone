@@ -1,18 +1,41 @@
 import { registerCommand } from "@vendetta/commands";
 import { React, ReactNative as RN } from "@vendetta/metro/common";
 import { storage } from "@vendetta/plugin";
+import { fetchPlugin, plugins, startPlugin, stopPlugin } from "@vendetta/plugins";
 import { useProxy } from "@vendetta/storage";
 import { Forms } from "@vendetta/ui/components";
+import { showToast } from "@vendetta/ui/toasts";
 import { patchAutocomplete } from "./patches/autocomplete";
 import { patchChatBar } from "./patches/chatBar";
 import { patchMessageActions } from "./patches/messageActions";
 import { patchMessages } from "./patches/messages";
 import { preloadRemotePacks, syncEmojisFromBot } from "./utils/botApi";
-import { logStatus } from "./utils/logger";
+import { logStatus, PLUGIN_TAG } from "./utils/logger";
 import { openEmojiStore } from "./utils/navigation";
 
 const { FormSection, FormSwitchRow, FormInput, FormRow } = Forms;
 let unpatches: (() => void)[] = [];
+
+async function hotReloadPlugin() {
+    try {
+        const pluginUrl = Object.keys(plugins).find(
+            (k) => k.includes("user-emojis") || plugins[k]?.manifest?.name === "UserEmojiPicker"
+        );
+        if (pluginUrl) {
+            showToast(`${PLUGIN_TAG} Refetching plugin...`, 1);
+            logStatus(`Hot-reloading plugin from ${pluginUrl}`);
+            stopPlugin(pluginUrl);
+            await fetchPlugin(pluginUrl);
+            startPlugin(pluginUrl);
+            showToast(`${PLUGIN_TAG} Updated & reloaded!`, 1);
+        } else {
+            showToast(`${PLUGIN_TAG} Plugin URL not found in registry`, 2);
+        }
+    } catch (e) {
+        logStatus(`Hot reload error: ${String(e)}`, true);
+        showToast(`${PLUGIN_TAG} Update error: ${String(e)}`, 2);
+    }
+}
 
 function Settings() {
     useProxy(storage);
@@ -25,6 +48,11 @@ function Settings() {
                     label="Force Resync"
                     subLabel={`${storage.emojis?.length || 0} emojis cached`}
                     onPress={() => syncEmojisFromBot(true)}
+                />
+                <FormRow
+                    label="Check for Updates / Hot-Reload"
+                    subLabel="Refetches the latest bundle and reloads live"
+                    onPress={hotReloadPlugin}
                 />
             </FormSection>
 
