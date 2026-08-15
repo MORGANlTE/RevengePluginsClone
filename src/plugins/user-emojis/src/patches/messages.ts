@@ -13,6 +13,44 @@ import {
 import { DraftActions, transformDraftText } from "../utils/draft";
 import { logStatus } from "../utils/logger";
 
+function encodeMessageContent(content: string, emojis: AppEmoji[]): { text: string; shouldProxy: boolean } {
+    if (!content || !emojis.length) return { text: content, shouldProxy: false };
+    const emojiMap = new Map(emojis.map((e) => [e.name.toLowerCase(), e]));
+    let shouldProxy = false;
+
+    // 1. Replace raw Discord tags (<a:name:id> or <:name:id>)
+    let result = content.replace(/<a?:([A-Za-z0-9_]+):\d+>/g, (match, name) => {
+        const found = emojiMap.get(name.toLowerCase());
+        if (found) {
+            shouldProxy = true;
+            return `;${found.name};`;
+        }
+        return match;
+    });
+
+    // 2. Replace semicolon shortcuts (;name;)
+    result = result.replace(/;([A-Za-z0-9_]+);/g, (match, name) => {
+        const found = emojiMap.get(name.toLowerCase());
+        if (found) {
+            shouldProxy = true;
+            return `;${found.name};`;
+        }
+        return match;
+    });
+
+    // 3. Replace standalone colon shortcuts (:name:)
+    result = result.replace(/(?<!<a?):([A-Za-z0-9_]+):(?!\d+>)/g, (match, name) => {
+        const found = emojiMap.get(name.toLowerCase());
+        if (found) {
+            shouldProxy = true;
+            return `;${found.name};`;
+        }
+        return match;
+    });
+
+    return { text: result, shouldProxy };
+}
+
 export function patchMessages(): () => void {
     const unpatches: (() => void)[] = [];
 
@@ -74,22 +112,12 @@ export function patchMessages(): () => void {
                 const loaded: AppEmoji[] = storage.emojis || [];
 
                 if (message?.content && loaded.length > 0) {
-                    let replaced = false;
-                    const emojiMap = new Map(loaded.map((e) => [e.name.toLowerCase(), e]));
+                    const { text, shouldProxy } = encodeMessageContent(message.content, loaded);
 
-                    const transformed = String(message.content).replace(emojiRegex, (match, tag) => {
-                        const found = emojiMap.get(tag.toLowerCase());
-                        if (found) {
-                            replaced = true;
-                            return `;${found.name};`;
-                        }
-                        return match;
-                    });
-
-                    if (replaced) {
+                    if (shouldProxy) {
                         const app = getActiveApp();
                         if (app?.commands.e) {
-                            logStatus("Proxying emoji message via bot interaction...");
+                            logStatus("Proxying emoji message via bot /e interaction...");
                             const guildId = SelectedGuildStore?.getGuildId() || undefined;
                             try {
                                 await RestAPI.post({
@@ -105,7 +133,7 @@ export function patchMessages(): () => void {
                                             version: app.commands.e.version,
                                             name: "e",
                                             type: 1,
-                                            options: [{ type: 3, name: "text", value: transformed }],
+                                            options: [{ type: 3, name: "text", value: text }],
                                         },
                                         nonce: Date.now().toString(),
                                     },
@@ -120,10 +148,57 @@ export function patchMessages(): () => void {
                 return orig.apply(MessageActions, args);
             })
         );
-        logStatus("Patched MessageActions.sendMessage for bot proxy routing");
+
+        // 4. Outgoing Message Edit Proxying (/ed interaction dispatch)
+        unpatches.push(
+            instead("editMessage", MessageActions, async (args, orig) => {
+                const [channelId, messageId, message] = args;
+                const loaded: AppEmoji[] = storage.emojis || [];
+
+                if (message?.content && loaded.length > 0) {
+                    const { text, shouldProxy } = encodeMessageContent(message.content, loaded);
+
+                    if (shouldProxy) {
+                        const app = getActiveApp();
+                        if (app?.commands.ed) {
+                            logStatus("Proxying emoji edit via bot /ed interaction...");
+                            const guildId = SelectedGuildStore?.getGuildId() || undefined;
+                            try {
+                                await RestAPI.post({
+                                    url: "/interactions",
+                                    body: {
+                                        type: 2,
+                                        application_id: app.appId,
+                                        guild_id: guildId,
+                                        channel_id: channelId,
+                                        session_id: AuthenticationStore.getSessionId(),
+                                        data: {
+                                            id: app.commands.ed.id,
+                                            version: app.commands.ed.version,
+                                            name: "ed",
+                                            type: 1,
+                                            options: [
+                                                { type: 3, name: "message_id", value: String(messageId) },
+                                                { type: 3, name: "text", value: text },
+                                            ],
+                                        },
+                                        nonce: Date.now().toString(),
+                                    },
+                                });
+                                return;
+                            } catch (e) {
+                                logStatus(`EditMessage proxy error: ${String(e)}`, true);
+                            }
+                        }
+                    }
+                }
+                return orig.apply(MessageActions, args);
+            })
+        );
+        logStatus("Patched MessageActions.sendMessage and editMessage for bot proxy routing");
     }
 
-    // 4. FluxDispatcher Interceptor (Chat Bubble Decoding & Bot Ping Forwarder)
+    // 5. FluxDispatcher Interceptor (Chat Bubble Decoding & Bot Ping Forwarder)
     unpatches.push(
         instead("dispatch", FluxDispatcher, (args, orig) => {
             const [event] = args;

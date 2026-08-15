@@ -72,6 +72,19 @@ export function patchAutocomplete(): () => void {
             logStatus("Patched EmojiStore.getCustomEmojiById");
         }
 
+        if (typeof EmojiStore.getUsableCustomEmojiById === "function") {
+            unpatches.push(
+                instead("getUsableCustomEmojiById", EmojiStore, (args, orig) => {
+                    const [id] = args;
+                    const loaded: AppEmoji[] = storage.emojis || [];
+                    const found = loaded.find((e) => e.id === id);
+                    if (found) return buildEmojiObj(found);
+                    return orig.apply(EmojiStore, args);
+                })
+            );
+            logStatus("Patched EmojiStore.getUsableCustomEmojiById");
+        }
+
         if (typeof EmojiStore.isEmojiUsable === "function") {
             unpatches.push(
                 instead("isEmojiUsable", EmojiStore, (args, orig) => {

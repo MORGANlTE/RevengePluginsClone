@@ -95,6 +95,7 @@ export default {
         }
 
         syncEmojisFromBot(false);
+        preloadRemotePacks();
         logStatus("Plugin loaded successfully.");
     },
 

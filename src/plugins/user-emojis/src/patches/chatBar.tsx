@@ -1,20 +1,51 @@
-import { findByName, findByProps } from "@vendetta/metro";
+import { findByName, findByProps, findByTypeName } from "@vendetta/metro";
 import { React, ReactNative as RN } from "@vendetta/metro/common";
-import { after } from "@vendetta/patcher";
+import { after, before } from "@vendetta/patcher";
 import { getAssetIDByName } from "@vendetta/ui/assets";
 import { findInReactTree } from "@vendetta/utils";
+import { setActiveChatInputRef, transformDraftText } from "../utils/draft";
 import { logStatus } from "../utils/logger";
 import { openEmojiModal } from "../utils/navigation";
 
 export function patchChatBar(): () => void {
     const unpatches: (() => void)[] = [];
+    const patchedRefs = new WeakSet();
 
-    // 1. Injects button into ChatInputGuardWrapper (Primary on modern Discord Mobile)
+    function hookInputRef(refObj: any) {
+        if (!refObj) return;
+        const target = refObj.current || refObj;
+        setActiveChatInputRef(refObj);
+
+        if (target && typeof target.handleTextChanged === "function" && !patchedRefs.has(target)) {
+            patchedRefs.add(target);
+            unpatches.push(
+                before("handleTextChanged", target, (args) => {
+                    if (typeof args[0] === "string") {
+                        const transformed = transformDraftText(args[0]);
+                        if (transformed !== args[0]) {
+                            args[0] = transformed;
+                        }
+                    }
+                })
+            );
+            logStatus("Hooked handleTextChanged for live chatbar emoji preview");
+        }
+    }
+
+    // 1. Injects button and hooks input into ChatInputGuardWrapper
     const ChatInputGuardWrapper = findByName("ChatInputGuardWrapper", false);
     if (ChatInputGuardWrapper) {
         unpatches.push(
             after("default", ChatInputGuardWrapper, (_, ret) => {
                 if (!ret?.props?.children) return;
+
+                const inputProps = findInReactTree(
+                    ret,
+                    (x) => x?.chatInputRef || x?.props?.chatInputRef?.current || x?.props?.chatInputRef
+                );
+                if (inputProps) {
+                    hookInputRef(inputProps.chatInputRef || inputProps.props?.chatInputRef || inputProps);
+                }
 
                 const btn = (
                     <RN.TouchableOpacity
@@ -57,10 +88,20 @@ export function patchChatBar(): () => void {
                 }
             })
         );
-        logStatus("Patched ChatInputGuardWrapper chat bar 💎 button");
+        logStatus("Patched ChatInputGuardWrapper for live preview & 💎 button");
     }
 
-    // 2. Injects into the "+" Attachment Sheet Actions (useChatInputActions)
+    // 2. ChatView hook for chatInputRef fallback
+    const ChatView = findByTypeName("ChatView");
+    if (ChatView) {
+        unpatches.push(
+            after("type", ChatView, ([{ chatInputRef }]) => {
+                if (chatInputRef) hookInputRef(chatInputRef);
+            })
+        );
+    }
+
+    // 3. Injects into the "+" Attachment Sheet Actions (useChatInputActions)
     const chatInputActions =
         findByProps("useChatInputActions") || findByName("useChatInputActions", false);
     if (chatInputActions) {
@@ -85,7 +126,7 @@ export function patchChatBar(): () => void {
         }
     }
 
-    // 3. Fallback: ChatAccessories / ChatInput bar
+    // 4. Fallback: ChatAccessories / ChatInput bar
     const chatInputMod =
         findByName("ChatAccessories", false) ||
         findByName("ChatInput", false) ||
@@ -123,7 +164,6 @@ export function patchChatBar(): () => void {
                     return res;
                 })
             );
-            logStatus("Patched ChatAccessories fallback");
         }
     }
 

@@ -2,7 +2,7 @@ import { findByProps, findByStoreName } from "@vendetta/metro";
 import { FluxDispatcher } from "@vendetta/metro/common";
 import { storage } from "@vendetta/plugin";
 import { showToast } from "@vendetta/ui/toasts";
-import { AppEmoji, CommandName, DiscoveredApp } from "../types";
+import { AppEmoji, CommandName, DiscoveredApp, EmojiPack } from "../types";
 import { logStatus, PLUGIN_TAG } from "./logger";
 
 export const REQUIRED_COMMANDS: CommandName[] = [
@@ -25,11 +25,29 @@ export const AuthenticationStore = findByStoreName("AuthenticationStore");
 export const SelectedGuildStore = findByStoreName("SelectedGuildStore");
 export const SelectedChannelStore = findByProps("getChannelId", "getVoiceChannelId");
 
+let cachedRemotePacks: EmojiPack[] = [];
+
+export function getRemotePacksCached(): EmojiPack[] {
+    return cachedRemotePacks;
+}
+
+export function preloadRemotePacks() {
+    if (cachedRemotePacks.length > 0) return;
+    fetch(PACKS_URL)
+        .then((res) => res.json())
+        .then((data) => {
+            if (Array.isArray(data)) {
+                cachedRemotePacks = data;
+                logStatus(`Preloaded ${data.length} emoji packs from market`);
+            }
+        })
+        .catch(() => {});
+}
+
 export function getEmojiCdnUrl(id: string, animated = false): string {
     if (!id) return "";
     if (id.startsWith("http")) return id;
-    const ext = animated ? "gif" : "webp";
-    return `https://cdn.discordapp.com/emojis/${id}.${ext}?size=64&quality=lossless`;
+    return `https://cdn.discordapp.com/emojis/${id}${animated ? "?animated=true&size=64" : "?size=64"}`;
 }
 
 export function parseRawEmojiTag(rawTag: string) {

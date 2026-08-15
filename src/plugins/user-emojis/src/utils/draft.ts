@@ -5,29 +5,46 @@ import { showToast } from "@vendetta/ui/toasts";
 import { AppEmoji } from "../types";
 import { SelectedChannelStore } from "./botApi";
 import { logStatus, PLUGIN_TAG } from "./logger";
-import { closeEmojiModal } from "./navigation";
 
 export const DraftStore = findByStoreName("DraftStore");
 export const DraftActions = findByProps("saveDraft", "setDraft", "updateDraft");
 export const ComponentDispatch = findByProps("dispatchToLastSubscribed") || findByProps("dispatch");
 export const TextUtils = findByProps("insertText");
 
+let activeChatInputRef: any = null;
+
+export function setActiveChatInputRef(ref: any) {
+    if (ref) activeChatInputRef = ref;
+}
+
+export function getActiveChatInputRef(): any {
+    return activeChatInputRef;
+}
+
 export function transformDraftText(text: string): string {
     const list: AppEmoji[] = storage.emojis || [];
     if (typeof text !== "string" || !list.length) return text;
     const emojiMap = new Map<string, AppEmoji>(list.map((e: AppEmoji) => [e.name.toLowerCase(), e]));
 
-    return text.replace(
-        /(?<!<a?:[A-Za-z0-9_]+:\d+)(?::([A-Za-z0-9_]+):|;([A-Za-z0-9_]+);)/g,
-        (match, colon, semi) => {
-            const raw = (colon || semi || "").toLowerCase();
-            const found = emojiMap.get(raw);
-            if (found) {
-                return `<${found.animated ? "a" : ""}:${found.name}:${found.id}>`;
-            }
-            return match;
+    // Step 1: Replace semicolon shortcuts (;name;)
+    let result = text.replace(/;([A-Za-z0-9_]+);/g, (match, name) => {
+        const found = emojiMap.get(name.toLowerCase());
+        if (found) {
+            return `<${found.animated ? "a" : ""}:${found.name}:${found.id}>`;
         }
-    );
+        return match;
+    });
+
+    // Step 2: Replace colon shortcuts (:name:) ONLY if not already inside a Discord tag <a:name:id>
+    result = result.replace(/(?<!<a?):([A-Za-z0-9_]+):(?!\d+>)/g, (match, name) => {
+        const found = emojiMap.get(name.toLowerCase());
+        if (found) {
+            return `<${found.animated ? "a" : ""}:${found.name}:${found.id}>`;
+        }
+        return match;
+    });
+
+    return result;
 }
 
 export function insertEmojiIntoDraft(emoji: AppEmoji) {
@@ -35,7 +52,20 @@ export function insertEmojiIntoDraft(emoji: AppEmoji) {
     const tag = `<${emoji.animated ? "a" : ""}:${emoji.name}:${emoji.id}> `;
     let inserted = false;
 
-    // Strategy 1: DraftStore & DraftActions (Primary on React Native Discord)
+    // Strategy 1: Active Chat Input Ref (Updates the live visual text input in Discord chat)
+    const inputRef = activeChatInputRef?.current || activeChatInputRef;
+    if (inputRef && typeof inputRef.handleTextChanged === "function") {
+        try {
+            const currentText = typeof inputRef.getText === "function"
+                ? inputRef.getText()
+                : (DraftStore?.getDraft ? DraftStore.getDraft(channelId, 0) || "" : "");
+            const updated = (currentText ? currentText.trimEnd() + " " : "") + tag;
+            inputRef.handleTextChanged(updated);
+            inserted = true;
+        } catch {}
+    }
+
+    // Strategy 2: DraftStore & DraftActions
     if (channelId && (DraftActions || DraftStore)) {
         try {
             const currentDraft = DraftStore?.getDraft ? DraftStore.getDraft(channelId, 0) || "" : "";
@@ -53,7 +83,7 @@ export function insertEmojiIntoDraft(emoji: AppEmoji) {
         } catch {}
     }
 
-    // Strategy 2: TextUtils
+    // Strategy 3: TextUtils
     if (!inserted && TextUtils?.insertText) {
         try {
             TextUtils.insertText(tag);
@@ -61,7 +91,7 @@ export function insertEmojiIntoDraft(emoji: AppEmoji) {
         } catch {}
     }
 
-    // Strategy 3: ComponentDispatch event
+    // Strategy 4: ComponentDispatch event
     if (!inserted) {
         try {
             if (ComponentDispatch?.dispatchToLastSubscribed) {
@@ -89,6 +119,4 @@ export function insertEmojiIntoDraft(emoji: AppEmoji) {
         showToast(`${PLUGIN_TAG} Added :${emoji.name}:`, 1);
         logStatus(`Inserted :${emoji.name}: into draft`);
     }
-
-    closeEmojiModal();
 }
