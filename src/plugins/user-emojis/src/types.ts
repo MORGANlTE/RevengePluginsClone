@@ -1,4 +1,11 @@
-export type CommandName = "e" | "ed" | "esync" | "deleteemoji" | "stealemoji" | "renameemoji" | "installpack" | "uninstallpack";
+export type CommandName =
+    | "e"
+    | "ed"
+    | "esync"
+    | "deleteemoji"
+    | "stealemoji"
+    | "installpack"
+    | "uninstallpack";
 
 export interface CommandMeta {
     id: string;
@@ -23,12 +30,4 @@ export interface EmojiPack {
     description?: string;
     iconUrl?: string;
     emojis: Record<string, string>;
-}
-
-export interface PluginStorage {
-    selectedAppId: string;
-    botPingToUserPing: boolean;
-    packIndexUrl: string;
-    emojis: AppEmoji[];
-    apps: DiscoveredApp[];
 }
