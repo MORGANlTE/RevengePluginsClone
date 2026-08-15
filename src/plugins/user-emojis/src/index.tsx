@@ -354,7 +354,7 @@ export async function syncEmojisFromBot(manual = false) {
     }
 }
 
-// --- EMOJI STORE MODAL (WITH RICH PACK PREVIEWS & ICONS) ---
+// --- EMOJI STORE MODAL (WITH PREVIEWS & ICONS) ---
 function EmojiStoreModal() {
     const [tab, setTab] = React.useState<"emojis" | "market">("emojis");
     const [search, setSearch] = React.useState("");
@@ -583,7 +583,6 @@ function EmojiStoreModal() {
                                     borderColor: "rgba(255,255,255,0.08)",
                                 }}
                             >
-                                {/* Pack Header */}
                                 <RN.View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                                     <RN.View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}>
                                         {iconData ? (
@@ -633,7 +632,6 @@ function EmojiStoreModal() {
                                     </RN.TouchableOpacity>
                                 </RN.View>
 
-                                {/* Emoji Preview Thumbnails Strip */}
                                 <RN.View
                                     style={{
                                         flexDirection: "row",
@@ -1039,63 +1037,84 @@ export default {
             })
         );
 
-        // 9. ActionSheet Long-Press Hook (Steal Emoji)[cite: 1]
+        // 9. Crash-Proof ActionSheet Long-Press Hook
         if (LazyActionSheet?.openLazy) {
             unpatches.push(
                 patcher.before("openLazy", LazyActionSheet, (args) => {
                     const [factory, key] = args;
                     if (key === "MessageLongPressActionSheet" || key === "MessageActionsActionSheet") {
                         args[0] = async () => {
-                            const Component = await factory();
-                            return (props: any) => {
-                                const rendered = typeof Component === "function" ? Component(props) : Component;
-                                if (!rendered) return rendered;
+                            try {
+                                const Component = await factory();
+                                return function PatchedActionSheet(props: any) {
+                                    const baseElement = React.createElement(
+                                        Component?.default || Component,
+                                        props
+                                    );
 
-                                try {
-                                    const message = props?.message;
-                                    const content = message?.content || "";
-                                    const app = getActiveApp();
+                                    try {
+                                        const message = props?.message;
+                                        const content = message?.content || "";
+                                        const app = getActiveApp();
 
-                                    if (app) {
+                                        if (!app || !content) return baseElement;
+
                                         const matches = Array.from(content.matchAll(emojiRegex));
-                                        if (matches.length > 0) {
-                                            const stealButtons = matches.map((m) => {
-                                                const raw = m[0];
-                                                const name = m[1];
-                                                return (
-                                                    <RN.TouchableOpacity
-                                                        key={`steal-${name}-${m[2]}`}
-                                                        onPress={() => {
-                                                            closeEmojiModal();
-                                                            dispatchAppCommand("stealemoji", message.channel_id, [
-                                                                { type: 3, name: "emoji", value: raw },
-                                                                { type: 3, name: "new_name", value: name },
-                                                            ]);
-                                                        }}
-                                                        style={{
-                                                            padding: 12,
-                                                            backgroundColor: "rgba(255,255,255,0.06)",
-                                                            borderRadius: 8,
-                                                            marginVertical: 4,
-                                                        }}
-                                                    >
-                                                        <RN.Text style={{ color: "#5865F2", fontWeight: "bold" }}>
-                                                            📥 Steal :{name}:
-                                                        </RN.Text>
-                                                    </RN.TouchableOpacity>
-                                                );
-                                            });
+                                        if (matches.length === 0) return baseElement;
 
-                                            if (rendered?.props && Array.isArray(rendered.props.children)) {
-                                                rendered.props.children.push(...stealButtons);
-                                            } else if (rendered?.props?.children?.props && Array.isArray(rendered.props.children.props.children)) {
-                                                rendered.props.children.props.children.push(...stealButtons);
-                                            }
-                                        }
+                                        const stealButtons = matches.map((m) => {
+                                            const raw = m[0];
+                                            const name = m[1];
+                                            return (
+                                                <RN.TouchableOpacity
+                                                    key={`steal-${name}-${m[2]}`}
+                                                    onPress={() => {
+                                                        closeEmojiModal();
+                                                        dispatchAppCommand("stealemoji", message.channel_id, [
+                                                            { type: 3, name: "emoji", value: raw },
+                                                            { type: 3, name: "new_name", value: name },
+                                                        ]);
+                                                    }}
+                                                    style={{
+                                                        padding: 14,
+                                                        flexDirection: "row",
+                                                        alignItems: "center",
+                                                        justifyContent: "space-between",
+                                                        backgroundColor: "rgba(255, 255, 255, 0.08)",
+                                                        borderRadius: 10,
+                                                        marginHorizontal: 12,
+                                                        marginVertical: 4,
+                                                    }}
+                                                >
+                                                    <RN.Text style={{ color: "#fff", fontSize: 14, fontWeight: "bold" }}>
+                                                        Steal :{name}:
+                                                    </RN.Text>
+                                                    <RN.Text style={{ fontSize: 16 }}>📥</RN.Text>
+                                                </RN.TouchableOpacity>
+                                            );
+                                        });
+
+                                        const existingChildren = Array.isArray(baseElement.props?.children)
+                                            ? baseElement.props.children
+                                            : baseElement.props?.children
+                                            ? [baseElement.props.children]
+                                            : [];
+
+                                        return React.cloneElement(
+                                            baseElement,
+                                            baseElement.props,
+                                            ...existingChildren,
+                                            ...stealButtons
+                                        );
+                                    } catch (renderErr) {
+                                        logStatus(`ActionSheet injection failed gracefully: ${renderErr}`, true);
+                                        return baseElement;
                                     }
-                                } catch {}
-                                return rendered;
-                            };
+                                };
+                            } catch (loadErr) {
+                                logStatus(`ActionSheet factory failed: ${loadErr}`, true);
+                                return factory();
+                            }
                         };
                     }
                     return args;
