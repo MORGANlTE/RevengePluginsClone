@@ -1,6 +1,6 @@
 ---
-title: user-emojis (by _morganite)
-description: Injects emojis natively, adds provides a custom Emoji Store. Add emojis from packs or steal from others!
+title: UserEmojiPicker (by _morganite)
+description: Ported User App Emoji integration for Revenge (mobile)
 ---
 
 <!--
@@ -9,9 +9,9 @@ description: Injects emojis natively, adds provides a custom Emoji Store. Add em
 -->
 
 <div align="center">
-<h1>user-emojis (by _morganite)</h1>
-<h3>Injects emojis natively, adds provides a custom Emoji Store. Add emojis from packs or steal from others!</h3>
+<h1>UserEmojiPicker (by _morganite)</h1>
+<h3>Ported User App Emoji integration for Revenge (mobile)</h3>
 </div>
 
 > **Note**
-> This is a landing page for the plugin **user-emojis**. The proper way to install this plugin is going to Revenge's Plugins page and adding it there.
+> This is a landing page for the plugin **UserEmojiPicker**. The proper way to install this plugin is going to Revenge's Plugins page and adding it there.

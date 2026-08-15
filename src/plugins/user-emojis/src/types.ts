@@ -1,21 +1,21 @@
-export type CommandName = "e" | "ed" | "esync" | "deleteemoji" | "stealemoji";[cite: 5]
+export type CommandName = "e" | "ed" | "esync" | "deleteemoji" | "stealemoji";
 
 export interface CommandMeta {
-    id: string;[cite: 5]
-    version: string;[cite: 5]
-    name: CommandName;[cite: 5]
+    id: string;
+    version: string;
+    name: CommandName;
 }
 
 export interface DiscoveredApp {
-    appId: string;[cite: 5]
-    appName: string;[cite: 5]
-    commands: Partial<Record<CommandName, CommandMeta>>;[cite: 5]
+    appId: string;
+    appName: string;
+    commands: Partial<Record<CommandName, CommandMeta>>;
 }
 
 export interface AppEmoji {
-    id: string;[cite: 5]
-    name: string;[cite: 5]
-    animated: boolean;[cite: 5]
+    id: string;
+    name: string;
+    animated: boolean;
 }
 
 export interface PluginStorage {
