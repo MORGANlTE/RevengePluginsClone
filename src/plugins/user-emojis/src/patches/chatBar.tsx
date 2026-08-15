@@ -3,7 +3,7 @@ import { React, ReactNative as RN } from "@vendetta/metro/common";
 import { after, before } from "@vendetta/patcher";
 import { getAssetIDByName } from "@vendetta/ui/assets";
 import { findInReactTree } from "@vendetta/utils";
-import RichChatInput from "../ui/RichChatInput";
+import LiveMessagePreview from "../ui/LiveMessagePreview";
 import { extractChatInputRef, setActiveChatInputRef, transformDraftText } from "../utils/draft";
 import { logStatus } from "../utils/logger";
 import { closeEmojiModal, toggleEmojiStore } from "../utils/navigation";
@@ -57,7 +57,7 @@ export function patchChatBar(): () => void {
         }
     }
 
-    // 1. Primary ChatView Tree Patch: Mounts RichChatInput cleanly above the input
+    // 1. Primary ChatView Tree Patch: Mounts LiveMessagePreview cleanly above the chatbar
     const ChatView = findByTypeName("ChatView");
     if (ChatView) {
         unpatches.push(
@@ -68,12 +68,12 @@ export function patchChatBar(): () => void {
                 return React.createElement(
                     React.Fragment,
                     {},
-                    React.createElement(RichChatInput, { inputProps: inputRef }),
+                    React.createElement(LiveMessagePreview, { inputProps: inputRef }),
                     ret
                 );
             })
         );
-        logStatus("Patched ChatView with RichChatInput");
+        logStatus("Patched ChatView with LiveMessagePreview");
     }
 
     // 2. ChatInputGuardWrapper: Injects 💎 button & captures chatInputRef

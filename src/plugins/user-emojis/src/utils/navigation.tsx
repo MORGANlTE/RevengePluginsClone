@@ -24,6 +24,13 @@ export const LazyActionSheet = findByProps("openLazy", "hideActionSheet");
 export const { openLazy, hideActionSheet } = LazyActionSheet;
 export const { showSimpleActionSheet } = findByProps("showSimpleActionSheet");
 
+const BottomSheetComponents =
+    findByProps("BottomSheetFlatList", "BottomSheetScrollView") ||
+    findByProps("BottomSheetScrollView");
+
+const ListComponent = BottomSheetComponents?.BottomSheetFlatList || RN.FlatList;
+const ScrollComponent = BottomSheetComponents?.BottomSheetScrollView || RN.ScrollView;
+
 export const ActionSheet = (props: any) =>
     React.createElement(
         _ActionSheet,
@@ -58,7 +65,7 @@ export function EmojiStoreModal() {
     const [loadingPacks, setLoadingPacks] = React.useState(false);
 
     const emojis: AppEmoji[] = storage.emojis || [];
-    const SHEET_HEIGHT = Math.min(RN.Dimensions.get("window").height * 0.58, 420);
+    const SHEET_HEIGHT = Math.min(RN.Dimensions.get("window").height * 0.6, 460);
 
     React.useEffect(() => {
         preloadRemotePacks();
@@ -331,7 +338,7 @@ export function EmojiStoreModal() {
                         />
 
                         {packs.length > 2 && (
-                            <RN.ScrollView
+                            <ScrollComponent
                                 horizontal
                                 showsHorizontalScrollIndicator={false}
                                 nestedScrollEnabled={true}
@@ -354,7 +361,7 @@ export function EmojiStoreModal() {
                                         <RN.Text style={{ color: "#fff", fontSize: 11, fontWeight: "600" }}>{p}</RN.Text>
                                     </RN.TouchableOpacity>
                                 ))}
-                            </RN.ScrollView>
+                            </ScrollComponent>
                         )}
 
                         {filteredEmojis.length === 0 ? (
@@ -366,10 +373,10 @@ export function EmojiStoreModal() {
                                 </RN.Text>
                             </RN.View>
                         ) : (
-                            <RN.FlatList
+                            <ListComponent
                                 key="emoji-grid-modal-7"
                                 data={filteredEmojis}
-                                keyExtractor={(item) => item.id}
+                                keyExtractor={(item: any) => item.id}
                                 renderItem={renderEmojiItem}
                                 numColumns={7}
                                 initialNumToRender={42}
@@ -377,10 +384,11 @@ export function EmojiStoreModal() {
                                 windowSize={7}
                                 removeClippedSubviews={false}
                                 nestedScrollEnabled={true}
+                                scrollEnabled={true}
                                 showsVerticalScrollIndicator={true}
                                 keyboardShouldPersistTaps="always"
                                 style={{ flex: 1 }}
-                                contentContainerStyle={{ paddingBottom: 16 }}
+                                contentContainerStyle={{ paddingBottom: 24 }}
                             />
                         )}
                     </RN.View>
@@ -397,19 +405,20 @@ export function EmojiStoreModal() {
                                 No remote packs found.
                             </RN.Text>
                         )}
-                        <RN.FlatList
+                        <ListComponent
                             key="market-list-modal-1"
                             data={remotePacks}
-                            keyExtractor={(item) => item.name}
+                            keyExtractor={(item: any) => item.name}
                             renderItem={renderPackItem}
                             numColumns={1}
                             initialNumToRender={8}
                             maxToRenderPerBatch={6}
                             nestedScrollEnabled={true}
+                            scrollEnabled={true}
                             showsVerticalScrollIndicator={true}
                             keyboardShouldPersistTaps="always"
                             style={{ flex: 1 }}
-                            contentContainerStyle={{ paddingBottom: 16 }}
+                            contentContainerStyle={{ paddingBottom: 24 }}
                         />
                     </RN.View>
                 )}

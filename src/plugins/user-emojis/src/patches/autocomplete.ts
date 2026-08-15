@@ -145,7 +145,41 @@ export function patchAutocomplete(): () => void {
         );
     }
 
-    // 4. Emoji URL Resolution Bypass
+    // 4. Emoticon & Surrogate Conversion Interception (prevents :wink: from turning into Unicode 😉 if custom emoji exists)
+    const EmojiConvertMod =
+        findByProps("convertNameToSurrogate") ||
+        findByProps("convertEmoticons") ||
+        findByProps("getEmoticonByName");
+
+    if (EmojiConvertMod) {
+        if (typeof EmojiConvertMod.convertNameToSurrogate === "function") {
+            unpatches.push(
+                instead("convertNameToSurrogate", EmojiConvertMod, (args, orig) => {
+                    const [name] = args;
+                    const loaded: AppEmoji[] = storage.emojis || [];
+                    if (typeof name === "string" && loaded.some((e) => e.name.toLowerCase() === name.toLowerCase())) {
+                        return null;
+                    }
+                    return orig.apply(EmojiConvertMod, args);
+                })
+            );
+        }
+        if (typeof EmojiConvertMod.getEmoticonByName === "function") {
+            unpatches.push(
+                instead("getEmoticonByName", EmojiConvertMod, (args, orig) => {
+                    const [name] = args;
+                    const loaded: AppEmoji[] = storage.emojis || [];
+                    if (typeof name === "string" && loaded.some((e) => e.name.toLowerCase() === name.toLowerCase())) {
+                        return null;
+                    }
+                    return orig.apply(EmojiConvertMod, args);
+                })
+            );
+        }
+        logStatus("Patched emoticon conversion bypass for custom emojis");
+    }
+
+    // 5. Emoji URL Resolution Bypass
     const emojiUrlMods = [
         findByProps("getEmojiURL"),
         findByProps("getCustomEmojiUrl"),
@@ -173,7 +207,7 @@ export function patchAutocomplete(): () => void {
     }
     logStatus("Patched all emoji permission and URL modules");
 
-    // 5. Comprehensive EmojiStore Interception
+    // 6. Comprehensive EmojiStore Interception
     if (EmojiStore) {
         // Search (Autocomplete & Query Matches)
         if (typeof EmojiStore.searchWithoutFetchingLatest === "function") {
