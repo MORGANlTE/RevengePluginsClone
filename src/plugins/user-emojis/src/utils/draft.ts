@@ -13,8 +13,9 @@ export const ComponentDispatch = findByProps("dispatchToLastSubscribed") || find
 export const TextUtils = findByProps("insertText");
 
 export function transformDraftText(text: string): string {
-    if (typeof text !== "string" || !storage.emojis?.length) return text;
-    const emojiMap = new Map(storage.emojis.map((e: AppEmoji) => [e.name.toLowerCase(), e]));
+    const list: AppEmoji[] = storage.emojis || [];
+    if (typeof text !== "string" || !list.length) return text;
+    const emojiMap = new Map<string, AppEmoji>(list.map((e: AppEmoji) => [e.name.toLowerCase(), e]));
 
     return text.replace(
         /(?<!<a?:[A-Za-z0-9_]+:\d+)(?::([A-Za-z0-9_]+):|;([A-Za-z0-9_]+);)/g,
@@ -34,43 +35,48 @@ export function insertEmojiIntoDraft(emoji: AppEmoji) {
     const tag = `<${emoji.animated ? "a" : ""}:${emoji.name}:${emoji.id}> `;
     let inserted = false;
 
-    // Strategy 1: ComponentDispatch event
-    try {
-        if (ComponentDispatch?.dispatchToLastSubscribed) {
-            ComponentDispatch.dispatchToLastSubscribed("INSERT_TEXT", {
-                plainText: tag,
-                rawText: tag,
-            });
-            inserted = true;
-        } else if (ComponentDispatch?.dispatch) {
-            ComponentDispatch.dispatch("INSERT_TEXT", {
-                plainText: tag,
-                rawText: tag,
-            });
-            inserted = true;
-        }
-    } catch {}
-
-    // Strategy 2: DraftStore state injection
-    if (!inserted && channelId && DraftActions && DraftStore) {
+    // Strategy 1: DraftStore & DraftActions (Primary on React Native Discord)
+    if (channelId && (DraftActions || DraftStore)) {
         try {
-            const currentDraft = DraftStore.getDraft(channelId, 0) || "";
+            const currentDraft = DraftStore?.getDraft ? DraftStore.getDraft(channelId, 0) || "" : "";
             const updated = (currentDraft ? currentDraft.trimEnd() + " " : "") + tag;
-            if (typeof DraftActions.saveDraft === "function") {
+            if (typeof DraftActions?.saveDraft === "function") {
                 DraftActions.saveDraft(channelId, updated, 0);
                 inserted = true;
-            } else if (typeof DraftActions.setDraft === "function") {
+            } else if (typeof DraftActions?.setDraft === "function") {
                 DraftActions.setDraft(channelId, updated, 0);
+                inserted = true;
+            } else if (typeof DraftActions?.updateDraft === "function") {
+                DraftActions.updateDraft(channelId, updated, 0);
                 inserted = true;
             }
         } catch {}
     }
 
-    // Strategy 3: TextUtils
+    // Strategy 2: TextUtils
     if (!inserted && TextUtils?.insertText) {
         try {
             TextUtils.insertText(tag);
             inserted = true;
+        } catch {}
+    }
+
+    // Strategy 3: ComponentDispatch event
+    if (!inserted) {
+        try {
+            if (ComponentDispatch?.dispatchToLastSubscribed) {
+                ComponentDispatch.dispatchToLastSubscribed("INSERT_TEXT", {
+                    plainText: tag,
+                    rawText: tag,
+                });
+                inserted = true;
+            } else if (ComponentDispatch?.dispatch) {
+                ComponentDispatch.dispatch("INSERT_TEXT", {
+                    plainText: tag,
+                    rawText: tag,
+                });
+                inserted = true;
+            }
         } catch {}
     }
 
@@ -80,6 +86,7 @@ export function insertEmojiIntoDraft(emoji: AppEmoji) {
         showToast(`${PLUGIN_TAG} Copied :${emoji.name}: to clipboard`, 1);
         logStatus(`Clipboard fallback used for :${emoji.name}:`);
     } else {
+        showToast(`${PLUGIN_TAG} Added :${emoji.name}:`, 1);
         logStatus(`Inserted :${emoji.name}: into draft`);
     }
 

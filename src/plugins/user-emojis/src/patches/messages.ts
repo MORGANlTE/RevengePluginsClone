@@ -39,8 +39,6 @@ export function patchMessages(): () => void {
             );
         }
         logStatus("Patched DraftActions for live chatbar emoji previews");
-    } else {
-        logStatus("DraftActions not found", true);
     }
 
     // 2. Incoming/Local Message AST Compilation Parser
@@ -66,8 +64,6 @@ export function patchMessages(): () => void {
             })
         );
         logStatus("Patched RowManager.createRowFromMessage for chat bubble parsing");
-    } else {
-        logStatus("RowManager not found", true);
     }
 
     // 3. Outgoing Message Proxying (/e interaction dispatch)
@@ -95,25 +91,29 @@ export function patchMessages(): () => void {
                         if (app?.commands.e) {
                             logStatus("Proxying emoji message via bot interaction...");
                             const guildId = SelectedGuildStore?.getGuildId() || undefined;
-                            await RestAPI.post({
-                                url: "/interactions",
-                                body: {
-                                    type: 2,
-                                    application_id: app.appId,
-                                    guild_id: guildId,
-                                    channel_id: channelId,
-                                    session_id: AuthenticationStore.getSessionId(),
-                                    data: {
-                                        id: app.commands.e.id,
-                                        version: app.commands.e.version,
-                                        name: "e",
-                                        type: 1,
-                                        options: [{ type: 3, name: "text", value: transformed }],
+                            try {
+                                await RestAPI.post({
+                                    url: "/interactions",
+                                    body: {
+                                        type: 2,
+                                        application_id: app.appId,
+                                        guild_id: guildId,
+                                        channel_id: channelId,
+                                        session_id: AuthenticationStore.getSessionId(),
+                                        data: {
+                                            id: app.commands.e.id,
+                                            version: app.commands.e.version,
+                                            name: "e",
+                                            type: 1,
+                                            options: [{ type: 3, name: "text", value: transformed }],
+                                        },
+                                        nonce: Date.now().toString(),
                                     },
-                                    nonce: Date.now().toString(),
-                                },
-                            });
-                            return;
+                                });
+                                return;
+                            } catch (e) {
+                                logStatus(`SendMessage proxy error: ${String(e)}`, true);
+                            }
                         }
                     }
                 }
@@ -121,35 +121,43 @@ export function patchMessages(): () => void {
             })
         );
         logStatus("Patched MessageActions.sendMessage for bot proxy routing");
-    } else {
-        logStatus("MessageActions not found", true);
     }
 
-    // 4. Bot Ping Forwarder
+    // 4. FluxDispatcher Interceptor (Chat Bubble Decoding & Bot Ping Forwarder)
     unpatches.push(
         instead("dispatch", FluxDispatcher, (args, orig) => {
             const [event] = args;
-            if (
-                event &&
-                (event.type === "MESSAGE_CREATE" || event.type === "MESSAGE_UPDATE") &&
-                storage.botPingToUserPing
-            ) {
+            if (event && (event.type === "MESSAGE_CREATE" || event.type === "MESSAGE_UPDATE")) {
                 try {
-                    const msg = event.message;
-                    const botId = storage.selectedAppId;
-                    const currentUser = UserStore?.getCurrentUser?.();
+                    const loaded: AppEmoji[] = storage.emojis || [];
+                    if (event.message?.content && loaded.length > 0 && event.message.content.includes(";")) {
+                        const emojiMap = new Map(loaded.map((e) => [e.name.toLowerCase(), e]));
+                        event.message.content = event.message.content.replace(
+                            /;([A-Za-z0-9_]+);/g,
+                            (match: string, name: string) => {
+                                const found = emojiMap.get(name.toLowerCase());
+                                return found ? `<${found.animated ? "a" : ""}:${found.name}:${found.id}>` : match;
+                            }
+                        );
+                    }
 
-                    if (msg && botId && currentUser) {
-                        let isPinged = false;
-                        if (msg.referenced_message?.author?.id === botId) isPinged = true;
-                        if (!isPinged && Array.isArray(msg.mentions) && msg.mentions.some((m: any) => m.id === botId)) {
-                            isPinged = true;
-                        }
+                    if (storage.botPingToUserPing && storage.selectedAppId) {
+                        const msg = event.message;
+                        const botId = storage.selectedAppId;
+                        const currentUser = UserStore?.getCurrentUser?.();
 
-                        if (isPinged) {
-                            if (!Array.isArray(msg.mentions)) msg.mentions = [];
-                            if (!msg.mentions.some((m: any) => m.id === currentUser.id)) {
-                                msg.mentions.push(currentUser);
+                        if (msg && botId && currentUser) {
+                            let isPinged = false;
+                            if (msg.referenced_message?.author?.id === botId) isPinged = true;
+                            if (!isPinged && Array.isArray(msg.mentions) && msg.mentions.some((m: any) => m.id === botId)) {
+                                isPinged = true;
+                            }
+
+                            if (isPinged) {
+                                if (!Array.isArray(msg.mentions)) msg.mentions = [];
+                                if (!msg.mentions.some((m: any) => m.id === currentUser.id)) {
+                                    msg.mentions.push(currentUser);
+                                }
                             }
                         }
                     }
@@ -158,7 +166,7 @@ export function patchMessages(): () => void {
             return orig.apply(FluxDispatcher, args);
         })
     );
-    logStatus("Patched FluxDispatcher for Bot Ping notifications");
+    logStatus("Patched FluxDispatcher for message decoding and bot ping notifications");
 
     return () => unpatches.forEach((u) => u?.());
 }

@@ -2,6 +2,7 @@ import { findByProps } from "@vendetta/metro";
 import { React, ReactNative as RN } from "@vendetta/metro/common";
 import { after, before } from "@vendetta/patcher";
 import { getAssetIDByName } from "@vendetta/ui/assets";
+import { findInReactTree } from "@vendetta/utils";
 import { dispatchAppCommand, emojiRegex, getActiveApp } from "../utils/botApi";
 import { logStatus } from "../utils/logger";
 import { closeEmojiModal } from "../utils/navigation";
@@ -9,115 +10,145 @@ import { closeEmojiModal } from "../utils/navigation";
 export function patchMessageActions(): () => void {
     const unpatches: (() => void)[] = [];
 
-    // Modern Discord Mobile: useMessageActions hook
+    // 1. Modern Discord Mobile: useMessageActions hook
     const messageActionsHook = findByProps("useMessageActions");
-    if (messageActionsHook?.default) {
-        unpatches.push(
-            after("default", messageActionsHook, ([{ message }], res) => {
-                if (!res || !Array.isArray(res)) return;
-                const content = message?.content || "";
-                const matches = Array.from(content.matchAll(emojiRegex));
-                const app = getActiveApp();
+    if (messageActionsHook) {
+        const fn = messageActionsHook.default ? "default" : "useMessageActions";
+        if (typeof messageActionsHook[fn] === "function") {
+            unpatches.push(
+                after(fn, messageActionsHook, ([{ message }], res) => {
+                    if (!res || !Array.isArray(res) || !message?.content) return;
+                    const matches = Array.from(String(message.content).matchAll(emojiRegex));
+                    const app = getActiveApp();
 
-                if (!app || matches.length === 0) return;
+                    if (!app || matches.length === 0) return;
 
-                matches.forEach((m) => {
-                    const raw = m[0];
-                    const name = m[1];
-                    res.push({
-                        label: `Steal :${name}:`,
-                        icon: getAssetIDByName("ic_download_24px") ?? getAssetIDByName("ic_message_actions"),
-                        action: () => {
-                            dispatchAppCommand("stealemoji", message.channel_id, [
-                                { type: 3, name: "emoji", value: raw },
-                                { type: 3, name: "new_name", value: name },
-                            ]);
-                        },
+                    matches.forEach((m) => {
+                        const raw = m[0];
+                        const name = m[1];
+                        if (!res.some((item: any) => item?.label === `Steal :${name}:`)) {
+                            res.push({
+                                label: `Steal :${name}:`,
+                                icon:
+                                    getAssetIDByName("ic_download_24px") ??
+                                    getAssetIDByName("DownloadIcon") ??
+                                    getAssetIDByName("ic_message_actions"),
+                                action: () => {
+                                    dispatchAppCommand("stealemoji", message.channel_id, [
+                                        { type: 3, name: "emoji", value: raw },
+                                        { type: 3, name: "new_name", value: name },
+                                    ]);
+                                },
+                            });
+                        }
                     });
-                });
-            })
-        );
-        logStatus("Patched modern useMessageActions hook");
-    } else {
-        logStatus("useMessageActions hook not found, using LazyActionSheet fallback");
+                })
+            );
+            logStatus("Patched modern useMessageActions hook");
+        }
     }
 
-    // ActionSheet Fallback
+    // 2. ActionSheet Interceptor for Discord Mobile Message Long Press
     const LazyActionSheet = findByProps("openLazy", "hideActionSheet");
     if (LazyActionSheet?.openLazy) {
         unpatches.push(
-            before("openLazy", LazyActionSheet, (args) => {
-                const [factory, key] = args;
-                if (key === "MessageLongPressActionSheet" || key === "MessageActionsActionSheet") {
-                    args[0] = async () => {
-                        const raw = await factory();
-                        const Component = raw?.default || raw;
-                        if (typeof Component !== "function") return raw;
-
-                        const PatchedSheet = (props: any) => {
-                            const tree = Component(props);
-                            if (!tree) return tree;
-
-                            try {
-                                const message = props?.message;
-                                const content = message?.content || "";
-                                const app = getActiveApp();
-
-                                if (app && content) {
-                                    const matches = Array.from(content.matchAll(emojiRegex));
-                                    if (matches.length > 0) {
-                                        const stealButtons = matches.map((m) => {
-                                            const rawTag = m[0];
-                                            const name = m[1];
-                                            return (
-                                                <RN.TouchableOpacity
-                                                    key={`steal-${name}-${m[2]}`}
-                                                    onPress={() => {
-                                                        closeEmojiModal();
-                                                        dispatchAppCommand("stealemoji", message.channel_id, [
-                                                            { type: 3, name: "emoji", value: rawTag },
-                                                            { type: 3, name: "new_name", value: name },
-                                                        ]);
-                                                    }}
-                                                    style={{
-                                                        padding: 14,
-                                                        flexDirection: "row",
-                                                        alignItems: "center",
-                                                        justifyContent: "space-between",
-                                                        backgroundColor: "rgba(255, 255, 255, 0.08)",
-                                                        borderRadius: 10,
-                                                        marginHorizontal: 12,
-                                                        marginVertical: 4,
-                                                    }}
-                                                >
-                                                    <RN.Text style={{ color: "#fff", fontSize: 14, fontWeight: "bold" }}>
-                                                        Steal :{name}:
-                                                    </RN.Text>
-                                                    <RN.Text style={{ fontSize: 16 }}>📥</RN.Text>
-                                                </RN.TouchableOpacity>
-                                            );
-                                        });
-
-                                        const children = Array.isArray(tree.props?.children)
-                                            ? [...tree.props.children, ...stealButtons]
-                                            : [tree.props?.children, ...stealButtons];
-
-                                        return React.cloneElement(tree, { ...tree.props }, children);
-                                    }
-                                }
-                            } catch (e) {
-                                logStatus(`Long-press render error: ${String(e)}`, true);
-                            }
-                            return tree;
-                        };
-
-                        return raw?.default ? { ...raw, default: PatchedSheet } : PatchedSheet;
-                    };
+            before("openLazy", LazyActionSheet, ([component, key, msg]) => {
+                const message = msg?.message;
+                if (
+                    (key !== "MessageLongPressActionSheet" && key !== "MessageActionsActionSheet") ||
+                    !message?.content
+                ) {
+                    return;
                 }
-                return args;
+
+                const matches = Array.from(String(message.content).matchAll(emojiRegex));
+                const app = getActiveApp();
+                if (!app || matches.length === 0) return;
+
+                if (component && typeof component.then === "function") {
+                    component.then((i: any) => {
+                        const target = i?.default ? i : { default: i };
+                        if (typeof target.default !== "function") return;
+
+                        const unp = after("default", target, (_, comp) => {
+                            React.useEffect(() => {
+                                return () => {
+                                    unp();
+                                };
+                            }, []);
+
+                            const stealButtons = matches.map((m, idx) => {
+                                const rawTag = m[0];
+                                const name = m[1];
+                                return (
+                                    <RN.TouchableOpacity
+                                        key={`user-emoji-steal-${name}-${idx}`}
+                                        onPress={() => {
+                                            closeEmojiModal();
+                                            dispatchAppCommand("stealemoji", message.channel_id, [
+                                                { type: 3, name: "emoji", value: rawTag },
+                                                { type: 3, name: "new_name", value: name },
+                                            ]);
+                                        }}
+                                        activeOpacity={0.7}
+                                        style={{
+                                            paddingVertical: 12,
+                                            paddingHorizontal: 16,
+                                            flexDirection: "row",
+                                            alignItems: "center",
+                                            justifyContent: "space-between",
+                                            backgroundColor: "rgba(255, 255, 255, 0.08)",
+                                            borderRadius: 10,
+                                            marginHorizontal: 12,
+                                            marginVertical: 4,
+                                        }}
+                                    >
+                                        <RN.Text
+                                            style={{
+                                                color: "#ffffff",
+                                                fontSize: 14,
+                                                fontWeight: "600",
+                                            }}
+                                        >
+                                            Steal :{name}:
+                                        </RN.Text>
+                                        <RN.Text style={{ fontSize: 16 }}>📥</RN.Text>
+                                    </RN.TouchableOpacity>
+                                );
+                            });
+
+                            const buttons =
+                                findInReactTree(
+                                    comp,
+                                    (x) => Array.isArray(x) && x.length > 0 && x[0]?.key !== undefined
+                                ) ||
+                                findInReactTree(
+                                    comp,
+                                    (x) =>
+                                        Array.isArray(x) &&
+                                        x.length > 0 &&
+                                        (x[0]?.type?.name === "ButtonRow" ||
+                                            x[0]?.type?.name === "ActionSheetRow" ||
+                                            x[0]?.props?.label)
+                                );
+
+                            if (Array.isArray(buttons)) {
+                                buttons.push(...stealButtons);
+                            } else if (comp?.props?.children) {
+                                if (Array.isArray(comp.props.children)) {
+                                    comp.props.children.push(...stealButtons);
+                                } else {
+                                    comp.props.children = [comp.props.children, ...stealButtons];
+                                }
+                            }
+
+                            return comp;
+                        });
+                    });
+                }
             })
         );
-        logStatus("Patched LazyActionSheet long-press interceptor");
+        logStatus("Patched LazyActionSheet message long-press interceptor safely");
     }
 
     return () => unpatches.forEach((u) => u?.());

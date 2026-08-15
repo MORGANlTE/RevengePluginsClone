@@ -26,18 +26,24 @@ export const SelectedGuildStore = findByStoreName("SelectedGuildStore");
 export const SelectedChannelStore = findByProps("getChannelId", "getVoiceChannelId");
 
 export function getEmojiCdnUrl(id: string, animated = false): string {
+    if (!id) return "";
+    if (id.startsWith("http")) return id;
     const ext = animated ? "gif" : "webp";
     return `https://cdn.discordapp.com/emojis/${id}.${ext}?size=64&quality=lossless`;
 }
 
 export function parseRawEmojiTag(rawTag: string) {
     if (!rawTag) return null;
-    if (rawTag.startsWith("<") && rawTag.endsWith(">")) {
-        const clean = rawTag.replace(/[<>]/g, "");
-        const parts = clean.split(":");
-        const isAnimated = parts[0] === "a";
-        const name = parts.length > 2 ? parts[1] : parts[0];
-        const id = parts[parts.length - 1];
+    const trimmed = rawTag.trim();
+    if (trimmed.startsWith("http")) {
+        return { id: "", name: "", animated: false, url: trimmed };
+    }
+
+    const matchWithBrackets = trimmed.match(/^<(a)?:([A-Za-z0-9_]+):(\d+)>$/);
+    if (matchWithBrackets) {
+        const isAnimated = matchWithBrackets[1] === "a";
+        const name = matchWithBrackets[2];
+        const id = matchWithBrackets[3];
         return {
             id,
             name,
@@ -45,9 +51,20 @@ export function parseRawEmojiTag(rawTag: string) {
             url: getEmojiCdnUrl(id, isAnimated),
         };
     }
-    if (rawTag.startsWith("http")) {
-        return { id: "", name: "", animated: false, url: rawTag };
+
+    const matchWithoutBrackets = trimmed.match(/^(a)?:?([A-Za-z0-9_]+):(\d+)$/);
+    if (matchWithoutBrackets) {
+        const isAnimated = matchWithoutBrackets[1] === "a";
+        const name = matchWithoutBrackets[2];
+        const id = matchWithoutBrackets[3];
+        return {
+            id,
+            name,
+            animated: isAnimated,
+            url: getEmojiCdnUrl(id, isAnimated),
+        };
     }
+
     return null;
 }
 
@@ -152,10 +169,11 @@ export async function syncEmojisFromBot(manual = false) {
             logStatus("Sync skipped: No active app or /esync command found", true);
             return;
         }
+        const activeApp = app;
 
         const dmReq = await RestAPI.post({
             url: "/users/@me/channels",
-            body: { recipients: [app.appId] },
+            body: { recipients: [activeApp.appId] },
         });
         const dmChannelId = dmReq?.body?.id;
         if (!dmChannelId) return;
@@ -168,7 +186,7 @@ export async function syncEmojisFromBot(manual = false) {
 
             function onMsg(e: any) {
                 const msg = e?.message;
-                if (msg?.channel_id === dmChannelId && String(msg?.author?.id) === app.appId) {
+                if (msg?.channel_id === dmChannelId && String(msg?.author?.id) === activeApp.appId) {
                     const att = msg?.attachments?.find((a: any) =>
                         String(a?.filename).toLowerCase() === "emojis.json"
                     );
@@ -186,12 +204,12 @@ export async function syncEmojisFromBot(manual = false) {
             url: "/interactions",
             body: {
                 type: 2,
-                application_id: app.appId,
+                application_id: activeApp.appId,
                 channel_id: dmChannelId,
                 session_id: AuthenticationStore.getSessionId(),
                 data: {
-                    id: app.commands.esync.id,
-                    version: app.commands.esync.version,
+                    id: activeApp.commands.esync.id,
+                    version: activeApp.commands.esync.version,
                     name: "esync",
                     type: 1,
                 },
