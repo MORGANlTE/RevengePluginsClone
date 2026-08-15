@@ -59,7 +59,6 @@ const SelectedChannelStore = findByProps("getChannelId", "getVoiceChannelId");
 const UserStore = findByStoreName("UserStore");
 const LazyActionSheet = findByProps("openLazy", "hideActionSheet");
 const RowManager = findByProps("createRowFromMessage", "generateRows");
-const ChatInput = findByName("ChatInput", false) || findByProps("ChatInput");
 
 const { FormSection, FormSwitchRow, FormInput, FormRow } = Forms;
 let unpatches: Function[] = [];
@@ -81,6 +80,23 @@ function logStatus(msg: string, isError = false) {
 
 export function getActiveApp(): DiscoveredApp | undefined {
     return (storage.apps || []).find((a: DiscoveredApp) => a.appId === storage.selectedAppId);
+}
+
+export function closeEmojiModal() {
+    if (LazyActionSheet?.hideActionSheet) {
+        LazyActionSheet.hideActionSheet();
+    }
+}
+
+export function openEmojiModal() {
+    if (LazyActionSheet?.openLazy) {
+        LazyActionSheet.openLazy(
+            async () => () => <EmojiStoreModal />,
+            "CustomEmojiStoreSheet"
+        );
+    } else {
+        showToast(`${PLUGIN_TAG} ActionSheet unavailable`, 2);
+    }
 }
 
 export async function dispatchAppCommand(cmdName: CommandName, channelId: string, options: any[] = []) {
@@ -220,10 +236,11 @@ export async function syncEmojisFromBot(manual = false) {
     }
 }
 
-// --- EMOJI STORE MODAL ---
+// --- EMOJI STORE MODAL (COMPACT BOTTOM SHEET WITH CLOSE BUTTON) ---
 function EmojiStoreModal() {
     const [tab, setTab] = React.useState<"emojis" | "market">("emojis");
     const [search, setSearch] = React.useState("");
+    const [selectedPack, setSelectedPack] = React.useState("All");
     const [remotePacks, setRemotePacks] = React.useState<EmojiPack[]>([]);
     const [loadingPacks, setLoadingPacks] = React.useState(false);
 
@@ -240,7 +257,24 @@ function EmojiStoreModal() {
         }
     }, [tab]);
 
-    const filteredEmojis = emojis.filter((e) => e.name.toLowerCase().includes(search.toLowerCase()));
+    const packs = Array.from(
+        new Set(
+            emojis.map((e) => {
+                const parts = e.name.split("_");
+                return parts.length > 1 ? parts[0] : "Other";
+            })
+        )
+    ).sort();
+    packs.unshift("All");
+
+    const filteredEmojis = emojis.filter((e) => {
+        const matchesSearch = e.name.toLowerCase().includes(search.toLowerCase());
+        if (!matchesSearch) return false;
+        if (selectedPack === "All") return true;
+        const parts = e.name.split("_");
+        const packName = parts.length > 1 ? parts[0] : "Other";
+        return packName.toLowerCase() === selectedPack.toLowerCase();
+    });
 
     const handleSendEmoji = (emoji: AppEmoji) => {
         const channelId = SelectedChannelStore?.getChannelId();
@@ -251,78 +285,189 @@ function EmojiStoreModal() {
         const tag = `<${emoji.animated ? "a" : ""}:${emoji.name}:${emoji.id}>`;
         try {
             MessageActions.sendMessage(channelId, { content: tag });
-            if (LazyActionSheet?.hideActionSheet) LazyActionSheet.hideActionSheet();
+            closeEmojiModal();
         } catch {
             RN.Clipboard.setString(tag);
             showToast(`${PLUGIN_TAG} Copied :${emoji.name}: to clipboard!`, 1);
+            closeEmojiModal();
         }
     };
 
     return (
-        <RN.ScrollView style={{ flex: 1, backgroundColor: "#1e1f22", padding: 12 }}>
-            <RN.View style={{ flexDirection: "row", justifyContent: "space-around", marginBottom: 12 }}>
+        <RN.View
+            style={{
+                height: 380,
+                backgroundColor: "#1e1f22",
+                borderTopLeftRadius: 16,
+                borderTopRightRadius: 16,
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+            }}
+        >
+            {/* Header with Title and Close Button */}
+            <RN.View
+                style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    paddingHorizontal: 16,
+                    paddingVertical: 10,
+                    borderBottomWidth: 1,
+                    borderBottomColor: "rgba(255, 255, 255, 0.1)",
+                }}
+            >
+                <RN.View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <RN.Text style={{ fontSize: 18 }}>💎</RN.Text>
+                    <RN.Text style={{ color: "#fff", fontSize: 15, fontWeight: "bold" }}>
+                        Custom Emojis ({emojis.length})
+                    </RN.Text>
+                </RN.View>
+
+                <RN.View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <RN.TouchableOpacity
+                        onPress={() => syncEmojisFromBot(true)}
+                        style={{
+                            paddingVertical: 4,
+                            paddingHorizontal: 8,
+                            backgroundColor: "rgba(88, 101, 242, 0.2)",
+                            borderRadius: 6,
+                        }}
+                    >
+                        <RN.Text style={{ color: "#5865F2", fontSize: 12, fontWeight: "600" }}>
+                            Resync
+                        </RN.Text>
+                    </RN.TouchableOpacity>
+                    <RN.TouchableOpacity
+                        onPress={closeEmojiModal}
+                        style={{
+                            backgroundColor: "rgba(255,255,255,0.1)",
+                            borderRadius: 14,
+                            width: 28,
+                            height: 28,
+                            alignItems: "center",
+                            justifyContent: "center",
+                        }}
+                    >
+                        <RN.Text style={{ color: "#fff", fontSize: 14, fontWeight: "bold" }}>✕</RN.Text>
+                    </RN.TouchableOpacity>
+                </RN.View>
+            </RN.View>
+
+            {/* Navigation Tabs */}
+            <RN.View
+                style={{
+                    flexDirection: "row",
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
+                    gap: 8,
+                }}
+            >
                 <RN.TouchableOpacity
                     onPress={() => setTab("emojis")}
                     style={{
-                        paddingVertical: 8,
-                        paddingHorizontal: 24,
-                        backgroundColor: tab === "emojis" ? "#5865F2" : "rgba(255,255,255,0.1)",
-                        borderRadius: 8,
+                        paddingVertical: 6,
+                        paddingHorizontal: 16,
+                        backgroundColor: tab === "emojis" ? "#5865F2" : "rgba(255,255,255,0.06)",
+                        borderRadius: 6,
                     }}
                 >
-                    <RN.Text style={{ color: "#fff", fontWeight: "bold" }}>Emojis ({emojis.length})</RN.Text>
+                    <RN.Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>Emojis</RN.Text>
                 </RN.TouchableOpacity>
                 <RN.TouchableOpacity
                     onPress={() => setTab("market")}
                     style={{
-                        paddingVertical: 8,
-                        paddingHorizontal: 24,
-                        backgroundColor: tab === "market" ? "#5865F2" : "rgba(255,255,255,0.1)",
-                        borderRadius: 8,
+                        paddingVertical: 6,
+                        paddingHorizontal: 16,
+                        backgroundColor: tab === "market" ? "#5865F2" : "rgba(255,255,255,0.06)",
+                        borderRadius: 6,
                     }}
                 >
-                    <RN.Text style={{ color: "#fff", fontWeight: "bold" }}>Market</RN.Text>
+                    <RN.Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>Pack Market</RN.Text>
                 </RN.TouchableOpacity>
             </RN.View>
 
+            {/* Content Area */}
             {tab === "emojis" ? (
-                <>
-                    <FormInput
-                        title="Filter Emojis"
+                <RN.View style={{ flex: 1, paddingHorizontal: 12 }}>
+                    <RN.TextInput
                         value={search}
                         placeholder="Search custom emojis..."
-                        onChange={setSearch}
+                        placeholderTextColor="#888"
+                        onChangeText={setSearch}
+                        style={{
+                            backgroundColor: "rgba(0,0,0,0.3)",
+                            color: "#fff",
+                            paddingHorizontal: 10,
+                            paddingVertical: 6,
+                            borderRadius: 8,
+                            fontSize: 13,
+                            marginBottom: 8,
+                        }}
                     />
-                    <RN.View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginVertical: 12 }}>
-                        {filteredEmojis.map((emoji) => {
-                            const url = `https://cdn.discordapp.com/emojis/${emoji.id}.${emoji.animated ? "gif" : "png"}?size=48&quality=lossless`;
-                            return (
+
+                    {/* Pack Filter Bar */}
+                    {packs.length > 2 && (
+                        <RN.ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            style={{ maxHeight: 28, marginBottom: 8 }}
+                        >
+                            {packs.map((p) => (
                                 <RN.TouchableOpacity
-                                    key={emoji.id}
-                                    onPress={() => handleSendEmoji(emoji)}
+                                    key={p}
+                                    onPress={() => setSelectedPack(p)}
                                     style={{
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                        padding: 6,
-                                        backgroundColor: "rgba(255,255,255,0.06)",
-                                        borderRadius: 8,
-                                        width: 48,
-                                        height: 48,
+                                        paddingHorizontal: 10,
+                                        paddingVertical: 3,
+                                        backgroundColor: selectedPack === p ? "#5865F2" : "rgba(255,255,255,0.08)",
+                                        borderRadius: 12,
+                                        marginRight: 6,
                                     }}
                                 >
-                                    <RN.Image
-                                        source={{ uri: url }}
-                                        style={{ width: 32, height: 32 }}
-                                        resizeMode="contain"
-                                    />
+                                    <RN.Text style={{ color: "#fff", fontSize: 11 }}>{p}</RN.Text>
                                 </RN.TouchableOpacity>
-                            );
-                        })}
-                    </RN.View>
-                </>
+                            ))}
+                        </RN.ScrollView>
+                    )}
+
+                    {/* Grid List */}
+                    <RN.ScrollView style={{ flex: 1 }}>
+                        <RN.View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, paddingBottom: 16 }}>
+                            {filteredEmojis.map((emoji) => {
+                                const url = `https://cdn.discordapp.com/emojis/${emoji.id}.${emoji.animated ? "gif" : "png"}?size=48&quality=lossless`;
+                                return (
+                                    <RN.TouchableOpacity
+                                        key={emoji.id}
+                                        onPress={() => handleSendEmoji(emoji)}
+                                        style={{
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            padding: 4,
+                                            backgroundColor: "rgba(255,255,255,0.05)",
+                                            borderRadius: 8,
+                                            width: 44,
+                                            height: 44,
+                                        }}
+                                    >
+                                        <RN.Image
+                                            source={{ uri: url }}
+                                            style={{ width: 32, height: 32 }}
+                                            resizeMode="contain"
+                                        />
+                                    </RN.TouchableOpacity>
+                                );
+                            })}
+                        </RN.View>
+                    </RN.ScrollView>
+                </RN.View>
             ) : (
-                <FormSection title="Pack Market">
-                    {loadingPacks && <RN.Text style={{ color: "#aaa", textAlign: "center" }}>Fetching remote packs...</RN.Text>}
+                <RN.ScrollView style={{ flex: 1, paddingHorizontal: 12 }}>
+                    {loadingPacks && (
+                        <RN.Text style={{ color: "#aaa", textAlign: "center", marginTop: 20 }}>
+                            Fetching remote packs...
+                        </RN.Text>
+                    )}
                     {remotePacks.map((pack) => {
                         const isInstalled = pack.emojis && Object.keys(pack.emojis).some((name) =>
                             emojis.some((e) => e.name.toLowerCase() === name.toLowerCase())
@@ -347,15 +492,16 @@ function EmojiStoreModal() {
                                                     { type: 3, name: "pack_name", value: pack.name },
                                                 ]);
                                             }
+                                            syncEmojisFromBot(false);
                                         }}
                                         style={{
                                             backgroundColor: isInstalled ? "#ED4245" : "#5865F2",
-                                            paddingVertical: 6,
-                                            paddingHorizontal: 12,
+                                            paddingVertical: 5,
+                                            paddingHorizontal: 10,
                                             borderRadius: 6,
                                         }}
                                     >
-                                        <RN.Text style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}>
+                                        <RN.Text style={{ color: "#fff", fontSize: 11, fontWeight: "bold" }}>
                                             {isInstalled ? "Uninstall" : "Install"}
                                         </RN.Text>
                                     </RN.TouchableOpacity>
@@ -363,9 +509,9 @@ function EmojiStoreModal() {
                             />
                         );
                     })}
-                </FormSection>
+                </RN.ScrollView>
             )}
-        </RN.ScrollView>
+        </RN.View>
     );
 }
 
@@ -379,14 +525,7 @@ function Settings() {
                 <FormRow
                     label="Open Emoji Store Picker"
                     subLabel="Browse emojis and install community packs"
-                    onPress={() => {
-                        if (LazyActionSheet?.openLazy) {
-                            LazyActionSheet.openLazy(
-                                async () => () => <EmojiStoreModal />,
-                                "CustomEmojiStoreSheet"
-                            );
-                        }
-                    }}
+                    onPress={openEmojiModal}
                 />
                 <FormRow
                     label="Force Resync Emojis"
@@ -425,6 +564,84 @@ function Settings() {
     );
 }
 
+// --- CHATBAR INJECTION LOGIC ---
+function injectEmojiButton(res: any) {
+    if (!res || !res.props) return;
+
+    const emojiBtn = (
+        <RN.TouchableOpacity
+            key="morganite-emoji-btn"
+            onPress={openEmojiModal}
+            style={{
+                justifyContent: "center",
+                alignItems: "center",
+                paddingHorizontal: 8,
+                paddingVertical: 4,
+                marginRight: 4,
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+            <RN.Text style={{ fontSize: 20 }}>💎</RN.Text>
+        </RN.TouchableOpacity>
+    );
+
+    const hasButton = (arr: any[]) =>
+        arr.some((child) => child?.key === "morganite-emoji-btn");
+
+    if (Array.isArray(res.props.children)) {
+        if (!hasButton(res.props.children)) {
+            res.props.children.unshift(emojiBtn);
+        }
+        return;
+    }
+
+    if (res.props.children?.props?.children) {
+        const nested = res.props.children.props.children;
+        if (Array.isArray(nested)) {
+            if (!hasButton(nested)) {
+                nested.unshift(emojiBtn);
+            }
+            return;
+        }
+    }
+
+    if (res.props.children && typeof res.props.children === "object") {
+        res.props.children = [emojiBtn, res.props.children];
+    }
+}
+
+function patchChatBar() {
+    const candidates = [
+        { mod: findByName("ChatInputActions", false) || findByProps("ChatInputActions"), name: "ChatInputActions" },
+        { mod: findByName("ChatAccessories", false) || findByProps("ChatAccessories"), name: "ChatAccessories" },
+        { mod: findByName("ChatInput", false) || findByProps("ChatInput", "renderChatInput"), name: "ChatInput" },
+    ];
+
+    for (const { mod, name } of candidates) {
+        if (!mod) continue;
+
+        try {
+            const propToPatch = mod.default ? "default" : mod[name] ? name : typeof mod === "function" ? "render" : null;
+            const target = propToPatch ? mod : Object.keys(mod).find((k) => typeof mod[k] === "function");
+            const targetProp = propToPatch || target;
+
+            if (targetProp && typeof mod[targetProp] === "function") {
+                unpatches.push(
+                    patcher.after(targetProp, mod, (_, res) => {
+                        try {
+                            injectEmojiButton(res);
+                        } catch {}
+                        return res;
+                    })
+                );
+                logStatus(`Patched chat bar component via ${name}`);
+            }
+        } catch (err) {
+            logStatus(`Error hooking ${name}: ${err}`, true);
+        }
+    }
+}
+
 // --- MAIN PLUGIN LIFECYCLE ---
 export default {
     settings: Settings,
@@ -434,18 +651,9 @@ export default {
         if (!storage.debugLogs) storage.debugLogs = [];
         if (storage.botPingToUserPing === undefined) storage.botPingToUserPing = true;
 
-        // Visual Module Diagnostic Check
-        const checks = [
-            `MsgActions: ${MessageActions ? "✅" : "❌"}`,
-            `RestAPI: ${RestAPI ? "✅" : "❌"}`,
-            `ActionSheet: ${LazyActionSheet ? "✅" : "❌"}`,
-            `ChatInput: ${ChatInput ? "✅" : "❌"}`,
-        ];
-        const statusReport = checks.join(" | ");
-        logStatus(`Modules: ${statusReport}`);
-        showToast(`${PLUGIN_TAG} Loaded (${statusReport})`, 1);
+        logStatus("Initializing plugin hooks...");
 
-        // 1. Fallback /emojistore Slash Command
+        // 1. Fallback /emojistore Command
         try {
             unpatches.push(
                 registerCommand({
@@ -454,65 +662,15 @@ export default {
                     description: "Open your custom User App Emoji picker",
                     displayDescription: "Open your custom User App Emoji picker",
                     options: [],
-                    execute: () => {
-                        if (LazyActionSheet?.openLazy) {
-                            LazyActionSheet.openLazy(
-                                async () => () => <EmojiStoreModal />,
-                                "CustomEmojiStoreSheet"
-                            );
-                        } else {
-                            showToast(`${PLUGIN_TAG} ActionSheet module unavailable`, 2);
-                        }
-                    },
+                    execute: openEmojiModal,
                 })
             );
-            logStatus("Registered /emojistore slash command");
-        } catch (e) {
-            logStatus(`Failed to register slash command: ${e}`, true);
-        }
+        } catch {}
 
-        // 2. Chat Bar Accessory Button Injection
-        if (ChatInput) {
-            try {
-                const target = ChatInput.default || ChatInput;
-                unpatches.push(
-                    patcher.after("render", target.prototype || target, (_, res) => {
-                        try {
-                            if (!res?.props) return res;
-                            const children = res.props.children;
-                            if (!children) return res;
+        // 2. Chat Bar Accessory Button
+        patchChatBar();
 
-                            const Button = (
-                                <RN.TouchableOpacity
-                                    key="user-emoji-store-btn"
-                                    onPress={() => {
-                                        if (LazyActionSheet?.openLazy) {
-                                            LazyActionSheet.openLazy(
-                                                async () => () => <EmojiStoreModal />,
-                                                "CustomEmojiStoreSheet"
-                                            );
-                                        }
-                                    }}
-                                    style={{ paddingHorizontal: 8, justifyContent: "center" }}
-                                >
-                                    <RN.Text style={{ fontSize: 20 }}>💎</RN.Text>
-                                </RN.TouchableOpacity>
-                            );
-
-                            if (Array.isArray(children)) {
-                                children.unshift(Button);
-                            }
-                        } catch {}
-                        return res;
-                    })
-                );
-                logStatus("Patched ChatInput bar");
-            } catch (e) {
-                logStatus(`ChatInput patch error: ${e}`, true);
-            }
-        }
-
-        // 3. Message Interception (Outgoing ;emoji; proxying)
+        // 3. Message Interception (Sending & Proxying)
         if (MessageActions) {
             unpatches.push(
                 patcher.instead("sendMessage", MessageActions, async (args, orig) => {
@@ -538,7 +696,6 @@ export default {
                         if (replaced) {
                             const app = getActiveApp();
                             if (app?.commands.e) {
-                                logStatus(`Proxying emoji message via bot interaction...`);
                                 const guildId = SelectedGuildStore?.getGuildId() || undefined;
                                 await RestAPI.post({
                                     url: "/interactions",
@@ -567,7 +724,7 @@ export default {
             );
         }
 
-        // 4. Chat Rendering Local Parser
+        // 4. Local Message Rendering (Transform ;emoji; in incoming chat view)
         if (RowManager?.createRowFromMessage) {
             unpatches.push(
                 patcher.after("createRowFromMessage", RowManager, (_, res) => {
@@ -590,7 +747,7 @@ export default {
             );
         }
 
-        // 5. Bot Ping Forwarder
+        // 5. Bot Mention Interceptor
         unpatches.push(
             patcher.instead("dispatch", FluxDispatcher, (args, orig) => {
                 const [event] = args;
@@ -624,7 +781,7 @@ export default {
             })
         );
 
-        // 6. ActionSheet (Long Press Context Menu Hook)
+        // 6. ActionSheet Long-Press Hook (Steal Emojis)
         if (LazyActionSheet?.openLazy) {
             unpatches.push(
                 patcher.before("openLazy", LazyActionSheet, (args) => {
@@ -651,7 +808,7 @@ export default {
                                                     <RN.TouchableOpacity
                                                         key={`steal-${name}`}
                                                         onPress={() => {
-                                                            if (LazyActionSheet.hideActionSheet) LazyActionSheet.hideActionSheet();
+                                                            closeEmojiModal();
                                                             dispatchAppCommand("stealemoji", message.channel_id, [
                                                                 { type: 3, name: "emoji", value: raw },
                                                                 { type: 3, name: "new_name", value: name },
@@ -680,12 +837,10 @@ export default {
                                         }
                                         return rendered;
                                     } catch (renderErr) {
-                                        logStatus(`ActionSheet render error: ${renderErr}`, true);
                                         return Component(props);
                                     }
                                 };
                             } catch (e) {
-                                logStatus(`ActionSheet factory error: ${e}`, true);
                                 return factory();
                             }
                         };
@@ -693,10 +848,8 @@ export default {
                     return args;
                 })
             );
-            logStatus("Hooked Message Long Press ActionSheet");
         }
 
-        // Kick off sync
         syncEmojisFromBot(false);
     },
 
