@@ -51,7 +51,7 @@ const emojiRegex = /<a?:([A-Za-z0-9_]+):(\d+)>/g;
 const PACKS_URL =
     "https://raw.githubusercontent.com/MORGANlTE/selfhosted-user-emojis-for-free/refs/heads/main/vencord_plugin/packs_index.json";
 
-// --- METRO MODULE RESOLVERS ---
+// --- METRO RESOLVERS ---
 const MessageActions = findByProps("sendMessage", "editMessage");
 const RestAPI = findByProps("get", "post", "del");
 const AuthenticationStore = findByStoreName("AuthenticationStore");
@@ -67,12 +67,10 @@ const RowManager = findByProps("createRowFromMessage", "generateRows");
 const DraftStore = findByStoreName("DraftStore");
 const DraftActions = findByProps("saveDraft", "setDraft", "updateDraft");
 const ComponentDispatch = findByProps("dispatchToLastSubscribed") || findByProps("dispatch");
-const TextUtils = findByProps("insertText");
 
 const { FormSection, FormSwitchRow, FormInput, FormRow } = Forms;
 let unpatches: Function[] = [];
 
-// --- HELPER PARSERS & URL GENERATORS ---
 function getEmojiCdnUrl(id: string, animated = false) {
     const ext = animated ? "gif" : "webp";
     return `https://cdn.discordapp.com/emojis/${id}.${ext}?size=64&quality=lossless`;
@@ -187,30 +185,15 @@ export function insertEmojiIntoDraft(emoji: AppEmoji) {
         }
     } catch {}
 
-    if (!inserted && channelId) {
+    if (!inserted && channelId && DraftActions && DraftStore) {
         try {
-            if (DraftActions && DraftStore) {
-                const currentDraft = DraftStore.getDraft(channelId, 0) || "";
-                const updated = (currentDraft ? currentDraft.trimEnd() + " " : "") + tag;
-
-                if (typeof DraftActions.saveDraft === "function") {
-                    DraftActions.saveDraft(channelId, updated, 0);
-                    inserted = true;
-                } else if (typeof DraftActions.setDraft === "function") {
-                    DraftActions.setDraft(channelId, updated, 0);
-                    inserted = true;
-                } else if (typeof DraftActions.updateDraft === "function") {
-                    DraftActions.updateDraft(channelId, updated, 0);
-                    inserted = true;
-                }
-            }
-        } catch {}
-    }
-
-    if (!inserted) {
-        try {
-            if (TextUtils?.insertText) {
-                TextUtils.insertText(tag);
+            const currentDraft = DraftStore.getDraft(channelId, 0) || "";
+            const updated = (currentDraft ? currentDraft.trimEnd() + " " : "") + tag;
+            if (typeof DraftActions.saveDraft === "function") {
+                DraftActions.saveDraft(channelId, updated, 0);
+                inserted = true;
+            } else if (typeof DraftActions.setDraft === "function") {
+                DraftActions.setDraft(channelId, updated, 0);
                 inserted = true;
             }
         } catch {}
@@ -354,7 +337,7 @@ export async function syncEmojisFromBot(manual = false) {
     }
 }
 
-// --- EMOJI STORE MODAL (WITH PREVIEWS & ICONS) ---
+// --- EMOJI STORE MODAL ---
 function EmojiStoreModal() {
     const [tab, setTab] = React.useState<"emojis" | "market">("emojis");
     const [search, setSearch] = React.useState("");
@@ -483,7 +466,7 @@ function EmojiStoreModal() {
                 </RN.TouchableOpacity>
             </RN.View>
 
-            {/* Content Body */}
+            {/* Body */}
             {tab === "emojis" ? (
                 <RN.View style={{ flex: 1 }}>
                     <RN.TextInput
@@ -718,73 +701,7 @@ function Settings() {
     );
 }
 
-// --- FLOATING ACTION BUTTON (FAB) ---
-function renderFloatingButton() {
-    return (
-        <RN.TouchableOpacity
-            key="morganite-fab-button"
-            onPress={openEmojiModal}
-            activeOpacity={0.8}
-            style={{
-                position: "absolute",
-                right: 14,
-                bottom: 64,
-                width: 38,
-                height: 38,
-                borderRadius: 19,
-                backgroundColor: "#5865F2",
-                alignItems: "center",
-                justifyContent: "center",
-                elevation: 10,
-                zIndex: 9999,
-                shadowColor: "#000",
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.35,
-                shadowRadius: 4,
-            }}
-        >
-            <RN.Text style={{ fontSize: 18 }}>💎</RN.Text>
-        </RN.TouchableOpacity>
-    );
-}
-
-function patchChatView() {
-    const chatModules = [
-        findByName("MessagesWrapper", false),
-        findByName("Chat", false),
-        findByName("Channel", false),
-        findByProps("MessagesWrapper"),
-    ].filter(Boolean);
-
-    for (const mod of chatModules) {
-        try {
-            const key = typeof mod === "function" ? null : mod.default ? "default" : Object.keys(mod).find((k) => typeof mod[k] === "function");
-            const target = key ? mod : mod;
-            const targetProp = key || target;
-
-            if (typeof target[targetProp] === "function") {
-                unpatches.push(
-                    patcher.after(targetProp, target, (_, res) => {
-                        if (!res || !res.props) return res;
-                        const children = res.props.children;
-
-                        const hasFAB = (list: any[]) =>
-                            Array.isArray(list) && list.some((item) => item?.key === "morganite-fab-button");
-
-                        if (Array.isArray(children) && !hasFAB(children)) {
-                            children.push(renderFloatingButton());
-                        } else if (res.props && !Array.isArray(children)) {
-                            res.props.children = [children, renderFloatingButton()];
-                        }
-                        return res;
-                    })
-                );
-            }
-        } catch {}
-    }
-}
-
-// --- MAIN PLUGIN LIFECYCLE ---
+// --- MAIN LIFECYCLE ---
 export default {
     settings: Settings,
     onLoad() {
@@ -867,9 +784,9 @@ export default {
             }
         }
 
-        // 3. DraftActions Interceptor (Live Chatbar Emoji Preview Replacement)
+        // 3. Draft Real-Time Conversion (Previews in Chat Input)[cite: 3]
         if (DraftActions) {
-            const transformDraftText = (text: string) => {
+            const transformText = (text: string) => {
                 if (typeof text !== "string" || !storage.emojis?.length) return text;
                 const emojiMap = new Map(storage.emojis.map((e: AppEmoji) => [e.name.toLowerCase(), e]));
 
@@ -889,27 +806,46 @@ export default {
             if (typeof DraftActions.saveDraft === "function") {
                 unpatches.push(
                     patcher.instead("saveDraft", DraftActions, (args, orig) => {
-                        if (typeof args[1] === "string") {
-                            args[1] = transformDraftText(args[1]);
-                        }
+                        if (typeof args[1] === "string") args[1] = transformText(args[1]);
                         return orig.apply(DraftActions, args);
                     })
                 );
             }
-
             if (typeof DraftActions.setDraft === "function") {
                 unpatches.push(
                     patcher.instead("setDraft", DraftActions, (args, orig) => {
-                        if (typeof args[1] === "string") {
-                            args[1] = transformDraftText(args[1]);
-                        }
+                        if (typeof args[1] === "string") args[1] = transformText(args[1]);
                         return orig.apply(DraftActions, args);
                     })
                 );
             }
         }
 
-        // 4. Slash Command
+        // 4. Live Message View Parser (Renders Emojis in Chat Bubbles Before AST Compilation)[cite: 3]
+        if (RowManager?.createRowFromMessage) {
+            unpatches.push(
+                patcher.before("createRowFromMessage", RowManager, (args) => {
+                    const [row] = args;
+                    const loaded: AppEmoji[] = storage.emojis || [];
+                    if (row?.message?.content && loaded.length > 0) {
+                        const emojiMap = new Map(loaded.map((e) => [e.name.toLowerCase(), e]));
+                        row.message.content = row.message.content.replace(
+                            /(?<!<a?:[A-Za-z0-9_]+:\d+)(?:;([A-Za-z0-9_]+);|:([A-Za-z0-9_]+):)/g,
+                            (match: string, semi: string, colon: string) => {
+                                const name = (semi || colon || "").toLowerCase();
+                                const found = emojiMap.get(name);
+                                if (found) {
+                                    return `<${found.animated ? "a" : ""}:${found.name}:${found.id}>`;
+                                }
+                                return match;
+                            }
+                        );
+                    }
+                })
+            );
+        }
+
+        // 5. Slash Command
         try {
             unpatches.push(
                 registerCommand({
@@ -923,10 +859,7 @@ export default {
             );
         } catch {}
 
-        // 5. Mount Floating Button
-        patchChatView();
-
-        // 6. Message Interception (Sending & Proxying)[cite: 3]
+        // 6. Outgoing Message Proxying[cite: 3]
         if (MessageActions) {
             unpatches.push(
                 patcher.instead("sendMessage", MessageActions, async (args, orig) => {
@@ -980,30 +913,7 @@ export default {
             );
         }
 
-        // 7. Local Message View Parser[cite: 3]
-        if (RowManager?.createRowFromMessage) {
-            unpatches.push(
-                patcher.after("createRowFromMessage", RowManager, (_, res) => {
-                    const loaded: AppEmoji[] = storage.emojis || [];
-                    if (res?.message?.content && loaded.length > 0) {
-                        const emojiMap = new Map(loaded.map((e) => [e.name.toLowerCase(), e]));
-                        res.message.content = res.message.content.replace(
-                            /;([A-Za-z0-9_]+);/g,
-                            (match: string, name: string) => {
-                                const found = emojiMap.get(name.toLowerCase());
-                                if (found) {
-                                    return `<${found.animated ? "a" : ""}:${found.name}:${found.id}>`;
-                                }
-                                return match;
-                            }
-                        );
-                    }
-                    return res;
-                })
-            );
-        }
-
-        // 8. Bot Ping Interceptor[cite: 3]
+        // 7. Bot Ping Interceptor[cite: 3]
         unpatches.push(
             patcher.instead("dispatch", FluxDispatcher, (args, orig) => {
                 const [event] = args;
@@ -1037,86 +947,130 @@ export default {
             })
         );
 
-        // 9. Crash-Proof ActionSheet Long-Press Hook
+        // 8. ActionSheet Hook (Attach Menu + Long-Press Steal)
         if (LazyActionSheet?.openLazy) {
             unpatches.push(
                 patcher.before("openLazy", LazyActionSheet, (args) => {
                     const [factory, key] = args;
-                    if (key === "MessageLongPressActionSheet" || key === "MessageActionsActionSheet") {
+
+                    // A. Attach (+) Button Menu
+                    if (
+                        key === "ChannelAttachmentActionSheet" ||
+                        key === "ChatAttachActionSheet" ||
+                        key === "AttachmentActionSheet"
+                    ) {
                         args[0] = async () => {
-                            try {
-                                const Component = await factory();
-                                return function PatchedActionSheet(props: any) {
-                                    const baseElement = React.createElement(
-                                        Component?.default || Component,
-                                        props
-                                    );
+                            const raw = await factory();
+                            const Component = raw?.default || raw;
+                            if (typeof Component !== "function") return raw;
 
-                                    try {
-                                        const message = props?.message;
-                                        const content = message?.content || "";
-                                        const app = getActiveApp();
+                            const PatchedAttach = (props: any) => {
+                                const tree = Component(props);
+                                if (!tree) return tree;
 
-                                        if (!app || !content) return baseElement;
+                                const storeButton = (
+                                    <RN.TouchableOpacity
+                                        key="open-custom-emoji-store-action"
+                                        onPress={() => {
+                                            closeEmojiModal();
+                                            setTimeout(openEmojiModal, 200);
+                                        }}
+                                        style={{
+                                            padding: 14,
+                                            flexDirection: "row",
+                                            alignItems: "center",
+                                            backgroundColor: "rgba(88, 101, 242, 0.15)",
+                                            borderRadius: 10,
+                                            marginHorizontal: 12,
+                                            marginVertical: 4,
+                                        }}
+                                    >
+                                        <RN.Text style={{ fontSize: 18, marginRight: 8 }}>💎</RN.Text>
+                                        <RN.Text style={{ color: "#fff", fontWeight: "bold", fontSize: 14 }}>
+                                            Custom Emoji Store
+                                        </RN.Text>
+                                    </RN.TouchableOpacity>
+                                );
 
-                                        const matches = Array.from(content.matchAll(emojiRegex));
-                                        if (matches.length === 0) return baseElement;
+                                const children = Array.isArray(tree.props?.children)
+                                    ? [storeButton, ...tree.props.children]
+                                    : [storeButton, tree.props?.children];
 
-                                        const stealButtons = matches.map((m) => {
-                                            const raw = m[0];
-                                            const name = m[1];
-                                            return (
-                                                <RN.TouchableOpacity
-                                                    key={`steal-${name}-${m[2]}`}
-                                                    onPress={() => {
-                                                        closeEmojiModal();
-                                                        dispatchAppCommand("stealemoji", message.channel_id, [
-                                                            { type: 3, name: "emoji", value: raw },
-                                                            { type: 3, name: "new_name", value: name },
-                                                        ]);
-                                                    }}
-                                                    style={{
-                                                        padding: 14,
-                                                        flexDirection: "row",
-                                                        alignItems: "center",
-                                                        justifyContent: "space-between",
-                                                        backgroundColor: "rgba(255, 255, 255, 0.08)",
-                                                        borderRadius: 10,
-                                                        marginHorizontal: 12,
-                                                        marginVertical: 4,
-                                                    }}
-                                                >
-                                                    <RN.Text style={{ color: "#fff", fontSize: 14, fontWeight: "bold" }}>
-                                                        Steal :{name}:
-                                                    </RN.Text>
-                                                    <RN.Text style={{ fontSize: 16 }}>📥</RN.Text>
-                                                </RN.TouchableOpacity>
-                                            );
-                                        });
+                                return React.cloneElement(tree, { ...tree.props }, children);
+                            };
 
-                                        const existingChildren = Array.isArray(baseElement.props?.children)
-                                            ? baseElement.props.children
-                                            : baseElement.props?.children
-                                            ? [baseElement.props.children]
-                                            : [];
-
-                                        return React.cloneElement(
-                                            baseElement,
-                                            baseElement.props,
-                                            ...existingChildren,
-                                            ...stealButtons
-                                        );
-                                    } catch (renderErr) {
-                                        logStatus(`ActionSheet injection failed gracefully: ${renderErr}`, true);
-                                        return baseElement;
-                                    }
-                                };
-                            } catch (loadErr) {
-                                logStatus(`ActionSheet factory failed: ${loadErr}`, true);
-                                return factory();
-                            }
+                            return raw?.default ? { ...raw, default: PatchedAttach } : PatchedAttach;
                         };
                     }
+
+                    // B. Long Press Steal Actions
+                    if (key === "MessageLongPressActionSheet" || key === "MessageActionsActionSheet") {
+                        args[0] = async () => {
+                            const raw = await factory();
+                            const Component = raw?.default || raw;
+                            if (typeof Component !== "function") return raw;
+
+                            const PatchedLongPress = (props: any) => {
+                                const tree = Component(props);
+                                if (!tree) return tree;
+
+                                try {
+                                    const message = props?.message;
+                                    const content = message?.content || "";
+                                    const app = getActiveApp();
+
+                                    if (app && content) {
+                                        const matches = Array.from(content.matchAll(emojiRegex));
+                                        if (matches.length > 0) {
+                                            const stealButtons = matches.map((m) => {
+                                                const rawTag = m[0];
+                                                const name = m[1];
+                                                return (
+                                                    <RN.TouchableOpacity
+                                                        key={`steal-${name}-${m[2]}`}
+                                                        onPress={() => {
+                                                            closeEmojiModal();
+                                                            dispatchAppCommand("stealemoji", message.channel_id, [
+                                                                { type: 3, name: "emoji", value: rawTag },
+                                                                { type: 3, name: "new_name", value: name },
+                                                            ]);
+                                                        }}
+                                                        style={{
+                                                            padding: 14,
+                                                            flexDirection: "row",
+                                                            alignItems: "center",
+                                                            justifyContent: "space-between",
+                                                            backgroundColor: "rgba(255, 255, 255, 0.08)",
+                                                            borderRadius: 10,
+                                                            marginHorizontal: 12,
+                                                            marginVertical: 4,
+                                                        }}
+                                                    >
+                                                        <RN.Text style={{ color: "#fff", fontSize: 14, fontWeight: "bold" }}>
+                                                            Steal :{name}:
+                                                        </RN.Text>
+                                                        <RN.Text style={{ fontSize: 16 }}>📥</RN.Text>
+                                                    </RN.TouchableOpacity>
+                                                );
+                                            });
+
+                                            const children = Array.isArray(tree.props?.children)
+                                                ? [...tree.props.children, ...stealButtons]
+                                                : [tree.props?.children, ...stealButtons];
+
+                                            return React.cloneElement(tree, { ...tree.props }, children);
+                                        }
+                                    }
+                                } catch (err) {
+                                    logStatus(`LongPress render error: ${err}`, true);
+                                }
+                                return tree;
+                            };
+
+                            return raw?.default ? { ...raw, default: PatchedLongPress } : PatchedLongPress;
+                        };
+                    }
+
                     return args;
                 })
             );
