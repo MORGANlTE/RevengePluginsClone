@@ -25,44 +25,53 @@ export function patchAutocomplete(): () => void {
     const unpatches: (() => void)[] = [];
 
     const GuildStore = findByStoreName("GuildStore");
+    const UserGuildSettingsStore = findByStoreName("UserGuildSettingsStore");
     const EmojiStore = findByStoreName("EmojiStore") || findByProps("getCustomEmojiById", "getEmojis");
 
-    // 1. GuildStore Mocks & Cache Injection (Complete mock preventing TypeError)
-    if (GuildStore) {
-        if (typeof GuildStore.getGuild === "function") {
-            unpatches.push(
-                instead("getGuild", GuildStore, (args, orig) => {
-                    if (args[0] === "UserAppEmojis") {
-                        return buildMockGuild();
-                    }
-                    return orig.apply(GuildStore, args);
-                })
-            );
-        }
-        if (typeof GuildStore.getGuilds === "function") {
-            unpatches.push(
-                after("getGuilds", GuildStore, (_, res) => {
-                    if (res && typeof res === "object") {
-                        res["UserAppEmojis"] = buildMockGuild();
-                    }
-                    return res;
-                })
-            );
-        }
-        if (typeof GuildStore.getGuildIds === "function") {
-            unpatches.push(
-                after("getGuildIds", GuildStore, (_, res) => {
-                    if (Array.isArray(res) && !res.includes("UserAppEmojis")) {
-                        res.push("UserAppEmojis");
-                    }
-                    return res;
-                })
-            );
-        }
-        logStatus("Patched GuildStore mock for UserAppEmojis");
+    // 1. GuildStore Mock (Targeted lookup only - NEVER inject into getGuildIds to prevent guild settings errors)
+    if (GuildStore && typeof GuildStore.getGuild === "function") {
+        unpatches.push(
+            instead("getGuild", GuildStore, (args, orig) => {
+                if (args[0] === "UserAppEmojis") {
+                    return buildMockGuild();
+                }
+                return orig.apply(GuildStore, args);
+            })
+        );
+        logStatus("Patched GuildStore.getGuild for UserAppEmojis");
     }
 
-    // 2. Individual Nitro / Permission Bypasses (Each queried independently for 100% resolution)
+    // 2. UserGuildSettingsStore Safe Guard
+    if (UserGuildSettingsStore) {
+        if (typeof UserGuildSettingsStore.getGuildSettings === "function") {
+            unpatches.push(
+                instead("getGuildSettings", UserGuildSettingsStore, (args, orig) => {
+                    if (args[0] === "UserAppEmojis") {
+                        return { muted: false, hide_muted_channels: false, message_notifications: 1 };
+                    }
+                    return orig.apply(UserGuildSettingsStore, args);
+                })
+            );
+        }
+        if (typeof UserGuildSettingsStore.isGuildMuted === "function") {
+            unpatches.push(
+                instead("isGuildMuted", UserGuildSettingsStore, (args, orig) => {
+                    if (args[0] === "UserAppEmojis") return false;
+                    return orig.apply(UserGuildSettingsStore, args);
+                })
+            );
+        }
+        if (typeof UserGuildSettingsStore.isMuted === "function") {
+            unpatches.push(
+                instead("isMuted", UserGuildSettingsStore, (args, orig) => {
+                    if (args[0] === "UserAppEmojis") return false;
+                    return orig.apply(UserGuildSettingsStore, args);
+                })
+            );
+        }
+    }
+
+    // 3. Individual Nitro / Permission Bypasses (Each queried independently for 100% resolution)
     const canUseEmojisEverywhereMod = findByProps("canUseEmojisEverywhere");
     if (canUseEmojisEverywhereMod && typeof canUseEmojisEverywhereMod.canUseEmojisEverywhere === "function") {
         unpatches.push(instead("canUseEmojisEverywhere", canUseEmojisEverywhereMod, () => true));
@@ -136,7 +145,7 @@ export function patchAutocomplete(): () => void {
         );
     }
 
-    // 3. Emoji URL Resolution Bypass
+    // 4. Emoji URL Resolution Bypass
     const emojiUrlMods = [
         findByProps("getEmojiURL"),
         findByProps("getCustomEmojiUrl"),
@@ -164,7 +173,7 @@ export function patchAutocomplete(): () => void {
     }
     logStatus("Patched all emoji permission and URL modules");
 
-    // 4. Comprehensive EmojiStore Interception
+    // 5. Comprehensive EmojiStore Interception
     if (EmojiStore) {
         // Search (Autocomplete & Query Matches)
         if (typeof EmojiStore.searchWithoutFetchingLatest === "function") {
