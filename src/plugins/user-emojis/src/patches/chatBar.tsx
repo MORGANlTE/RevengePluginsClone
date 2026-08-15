@@ -3,7 +3,6 @@ import { React, ReactNative as RN } from "@vendetta/metro/common";
 import { after, before } from "@vendetta/patcher";
 import { getAssetIDByName } from "@vendetta/ui/assets";
 import { findInReactTree } from "@vendetta/utils";
-import EmojiDrawer from "../ui/EmojiDrawer";
 import RichChatInput from "../ui/RichChatInput";
 import { extractChatInputRef, setActiveChatInputRef, transformDraftText } from "../utils/draft";
 import { logStatus } from "../utils/logger";
@@ -21,7 +20,7 @@ export function patchChatBar(): () => void {
         if (target && typeof target.handleTextChanged === "function" && !patchedRefs.has(target)) {
             patchedRefs.add(target);
 
-            // Auto-close emoji drawer when user clicks/focuses the chatbar
+            // Auto-close emoji modal when user clicks/focuses the chatbar
             if (typeof target.handleFocus === "function") {
                 unpatches.push(
                     before("handleFocus", target, () => {
@@ -58,7 +57,7 @@ export function patchChatBar(): () => void {
         }
     }
 
-    // 1. Primary ChatView Tree Patch: Mounts RichChatInput and EmojiDrawer
+    // 1. Primary ChatView Tree Patch: Mounts RichChatInput cleanly above the input
     const ChatView = findByTypeName("ChatView");
     if (ChatView) {
         unpatches.push(
@@ -70,12 +69,11 @@ export function patchChatBar(): () => void {
                     React.Fragment,
                     {},
                     React.createElement(RichChatInput, { inputProps: inputRef }),
-                    ret,
-                    React.createElement(EmojiDrawer, { inputProps: inputRef })
+                    ret
                 );
             })
         );
-        logStatus("Patched ChatView with RichChatInput and EmojiDrawer");
+        logStatus("Patched ChatView with RichChatInput");
     }
 
     // 2. ChatInputGuardWrapper: Injects 💎 button & captures chatInputRef

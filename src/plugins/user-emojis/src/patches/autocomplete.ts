@@ -5,25 +5,35 @@ import { AppEmoji } from "../types";
 import { buildEmojiObj, getEmojiCdnUrl, USER_PICKER_CATEGORY } from "../utils/botApi";
 import { logStatus } from "../utils/logger";
 
+function buildMockGuild() {
+    const loaded: AppEmoji[] = storage.emojis || [];
+    return {
+        id: "UserAppEmojis",
+        name: "User App Emojis",
+        icon: null,
+        getIconURL: () => null,
+        features: new Set<string>(),
+        emojis: loaded.map((e) => e.id),
+        roles: {},
+        ownerId: "",
+        joinedAt: new Date().toISOString(),
+        hasFeature: (_feat: string) => false,
+    };
+}
+
 export function patchAutocomplete(): () => void {
     const unpatches: (() => void)[] = [];
 
     const GuildStore = findByStoreName("GuildStore");
     const EmojiStore = findByStoreName("EmojiStore") || findByProps("getCustomEmojiById", "getEmojis");
 
-    // 1. GuildStore Mocks & Cache Injection
+    // 1. GuildStore Mocks & Cache Injection (Complete mock preventing TypeError)
     if (GuildStore) {
         if (typeof GuildStore.getGuild === "function") {
             unpatches.push(
                 instead("getGuild", GuildStore, (args, orig) => {
                     if (args[0] === "UserAppEmojis") {
-                        const loaded: AppEmoji[] = storage.emojis || [];
-                        return {
-                            id: "UserAppEmojis",
-                            name: "User App Emojis",
-                            getIconURL: () => null,
-                            emojis: loaded.map((e) => e.id),
-                        };
+                        return buildMockGuild();
                     }
                     return orig.apply(GuildStore, args);
                 })
@@ -33,13 +43,7 @@ export function patchAutocomplete(): () => void {
             unpatches.push(
                 after("getGuilds", GuildStore, (_, res) => {
                     if (res && typeof res === "object") {
-                        const loaded: AppEmoji[] = storage.emojis || [];
-                        res["UserAppEmojis"] = {
-                            id: "UserAppEmojis",
-                            name: "User App Emojis",
-                            getIconURL: () => null,
-                            emojis: loaded.map((e) => e.id),
-                        };
+                        res["UserAppEmojis"] = buildMockGuild();
                     }
                     return res;
                 })

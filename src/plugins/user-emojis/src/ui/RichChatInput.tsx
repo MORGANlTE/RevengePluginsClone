@@ -116,40 +116,32 @@ export default function RichChatInput({ inputProps }: { inputProps?: any }) {
                 borderColor: "rgba(88, 101, 242, 0.35)",
             }}
         >
-            <RN.Text
-                style={{
-                    color: "#ffffff",
-                    fontSize: 15,
-                    lineHeight: 24,
-                }}
-            >
-                {tokens.map((token, index) => {
-                    if (token.type === "emoji" && token.emoji) {
-                        return (
-                            <RN.Image
-                                key={`rich-emoji-${token.emoji.id}-${index}`}
-                                source={{
-                                    uri: getEmojiCdnUrl(token.emoji.id, Boolean(token.emoji.animated)),
-                                }}
-                                style={{
-                                    width: 22,
-                                    height: 22,
-                                    marginHorizontal: 2,
-                                }}
-                                resizeMode="contain"
-                            />
-                        );
-                    }
+            {tokens.map((token, index) => {
+                if (token.type === "emoji" && token.emoji) {
                     return (
-                        <RN.Text
-                            key={`rich-txt-${index}`}
-                            style={{ color: "#ffffff", fontSize: 15 }}
-                        >
-                            {token.content}
-                        </RN.Text>
+                        <RN.Image
+                            key={`rich-emoji-${token.emoji.id}-${index}`}
+                            source={{
+                                uri: getEmojiCdnUrl(token.emoji.id, Boolean(token.emoji.animated)),
+                            }}
+                            style={{
+                                width: 24,
+                                height: 24,
+                                marginHorizontal: 2,
+                            }}
+                            resizeMode="contain"
+                        />
                     );
-                })}
-            </RN.Text>
+                }
+                return (
+                    <RN.Text
+                        key={`rich-txt-${index}`}
+                        style={{ color: "#ffffff", fontSize: 15 }}
+                    >
+                        {token.content}
+                    </RN.Text>
+                );
+            })}
         </RN.View>
     );
 }

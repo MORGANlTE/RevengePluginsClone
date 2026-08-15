@@ -14,7 +14,7 @@ import {
     SelectedChannelStore,
     syncEmojisFromBot,
 } from "./botApi";
-import { getActiveChatInputRef, insertEmojiIntoDraft } from "./draft";
+import { insertEmojiIntoDraft } from "./draft";
 import { logStatus, PLUGIN_TAG } from "./logger";
 
 const { ActionSheet: _ActionSheet } = findByProps("ActionSheet");
@@ -58,7 +58,7 @@ export function EmojiStoreModal() {
     const [loadingPacks, setLoadingPacks] = React.useState(false);
 
     const emojis: AppEmoji[] = storage.emojis || [];
-    const SHEET_HEIGHT = 330;
+    const SHEET_HEIGHT = Math.min(RN.Dimensions.get("window").height * 0.58, 420);
 
     React.useEffect(() => {
         preloadRemotePacks();
@@ -85,7 +85,7 @@ export function EmojiStoreModal() {
     }, [emojis]);
 
     const filteredEmojis = React.useMemo(() => {
-        const q = search.toLowerCase();
+        const q = search.trim().toLowerCase();
         return emojis.filter((e) => {
             const matchesSearch = !q || e.name.toLowerCase().includes(q);
             if (!matchesSearch) return false;
@@ -105,12 +105,12 @@ export function EmojiStoreModal() {
                     onPress={() => insertEmojiIntoDraft(item)}
                     activeOpacity={0.6}
                     style={{
-                        flex: 1 / 6,
+                        flex: 1 / 7,
                         aspectRatio: 1,
-                        margin: 3,
+                        margin: 2,
                         alignItems: "center",
                         justifyContent: "center",
-                        backgroundColor: "rgba(255, 255, 255, 0.06)",
+                        backgroundColor: "rgba(255, 255, 255, 0.07)",
                         borderRadius: 8,
                     }}
                 >
@@ -248,7 +248,7 @@ export function EmojiStoreModal() {
     );
 
     return (
-        <ActionSheet title="Custom Emojis">
+        <ActionSheet title="💎 Custom Emojis">
             <RN.View
                 style={{
                     height: SHEET_HEIGHT,
@@ -259,82 +259,73 @@ export function EmojiStoreModal() {
                     flexDirection: "column",
                 }}
             >
-                {/* Header */}
+                {/* Header Action Bar */}
                 <RN.View
                     style={{
                         flexDirection: "row",
                         alignItems: "center",
                         justifyContent: "space-between",
-                        paddingBottom: 6,
+                        paddingBottom: 8,
                         borderBottomWidth: 1,
                         borderBottomColor: "rgba(255, 255, 255, 0.08)",
                     }}
                 >
-                    <RN.Text style={{ color: "#aaa", fontSize: 11 }}>
+                    <RN.Text style={{ color: "#aaa", fontSize: 12, fontWeight: "600" }}>
                         {emojis.length} emojis cached
                     </RN.Text>
-                    <RN.TouchableOpacity
-                        onPress={() => syncEmojisFromBot(true)}
-                        style={{
-                            paddingVertical: 3,
-                            paddingHorizontal: 8,
-                            backgroundColor: "rgba(88, 101, 242, 0.2)",
-                            borderRadius: 6,
-                        }}
-                    >
-                        <RN.Text style={{ color: "#5865F2", fontSize: 10, fontWeight: "bold" }}>
-                            🔄 Resync
-                        </RN.Text>
-                    </RN.TouchableOpacity>
+
+                    <RN.View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                        {/* Market Cart Button */}
+                        <RN.TouchableOpacity
+                            onPress={() => setTab(tab === "emojis" ? "market" : "emojis")}
+                            style={{
+                                paddingVertical: 5,
+                                paddingHorizontal: 10,
+                                backgroundColor: tab === "market" ? "#5865F2" : "rgba(255, 255, 255, 0.08)",
+                                borderRadius: 8,
+                                flexDirection: "row",
+                                alignItems: "center",
+                                gap: 4,
+                            }}
+                        >
+                            <RN.Text style={{ fontSize: 14 }}>🛒</RN.Text>
+                            <RN.Text style={{ color: "#fff", fontSize: 11, fontWeight: "600" }}>
+                                {tab === "market" ? "Local" : "Market"}
+                            </RN.Text>
+                        </RN.TouchableOpacity>
+
+                        {/* Resync Button */}
+                        <RN.TouchableOpacity
+                            onPress={() => syncEmojisFromBot(true)}
+                            style={{
+                                paddingVertical: 5,
+                                paddingHorizontal: 12,
+                                backgroundColor: "rgba(88, 101, 242, 0.25)",
+                                borderRadius: 8,
+                            }}
+                        >
+                            <RN.Text style={{ color: "#5865F2", fontSize: 12, fontWeight: "bold" }}>
+                                🔄 Resync
+                            </RN.Text>
+                        </RN.TouchableOpacity>
+                    </RN.View>
                 </RN.View>
 
-                {/* Tabs */}
-                <RN.View style={{ flexDirection: "row", paddingVertical: 6, gap: 6 }}>
-                    <RN.TouchableOpacity
-                        onPress={() => setTab("emojis")}
-                        style={{
-                            flex: 1,
-                            paddingVertical: 5,
-                            alignItems: "center",
-                            backgroundColor: tab === "emojis" ? "#5865F2" : "rgba(255, 255, 255, 0.06)",
-                            borderRadius: 6,
-                        }}
-                    >
-                        <RN.Text style={{ color: "#fff", fontSize: 11, fontWeight: "bold" }}>
-                            Local Emojis
-                        </RN.Text>
-                    </RN.TouchableOpacity>
-                    <RN.TouchableOpacity
-                        onPress={() => setTab("market")}
-                        style={{
-                            flex: 1,
-                            paddingVertical: 5,
-                            alignItems: "center",
-                            backgroundColor: tab === "market" ? "#5865F2" : "rgba(255, 255, 255, 0.06)",
-                            borderRadius: 6,
-                        }}
-                    >
-                        <RN.Text style={{ color: "#fff", fontSize: 11, fontWeight: "bold" }}>
-                            Packs Market
-                        </RN.Text>
-                    </RN.TouchableOpacity>
-                </RN.View>
-
-                {/* Tab 1 */}
+                {/* Tab 1: Local Emojis */}
                 {tab === "emojis" ? (
-                    <RN.View style={{ flex: 1 }}>
+                    <RN.View style={{ flex: 1, paddingTop: 6 }}>
                         <RN.TextInput
                             value={search}
                             placeholder="Search emojis..."
                             placeholderTextColor="#888"
-                            onChangeText={setSearch}
+                            onChangeText={(txt: string) => setSearch(txt)}
                             style={{
-                                backgroundColor: "rgba(0, 0, 0, 0.3)",
+                                backgroundColor: "rgba(0, 0, 0, 0.35)",
                                 color: "#fff",
-                                paddingHorizontal: 8,
-                                paddingVertical: 4,
-                                borderRadius: 6,
-                                fontSize: 12,
+                                paddingHorizontal: 10,
+                                paddingVertical: 6,
+                                borderRadius: 8,
+                                fontSize: 13,
                                 marginBottom: 6,
                             }}
                         />
@@ -344,7 +335,7 @@ export function EmojiStoreModal() {
                                 horizontal
                                 showsHorizontalScrollIndicator={false}
                                 nestedScrollEnabled={true}
-                                style={{ maxHeight: 26, marginBottom: 6 }}
+                                style={{ maxHeight: 28, marginBottom: 6 }}
                                 contentContainerStyle={{ alignItems: "center" }}
                             >
                                 {packs.map((p) => (
@@ -352,15 +343,15 @@ export function EmojiStoreModal() {
                                         key={p}
                                         onPress={() => setSelectedPack(p)}
                                         style={{
-                                            paddingHorizontal: 8,
-                                            paddingVertical: 3,
+                                            paddingHorizontal: 10,
+                                            paddingVertical: 4,
                                             backgroundColor:
                                                 selectedPack === p ? "#5865F2" : "rgba(255, 255, 255, 0.08)",
                                             borderRadius: 8,
-                                            marginRight: 4,
+                                            marginRight: 6,
                                         }}
                                     >
-                                        <RN.Text style={{ color: "#fff", fontSize: 10 }}>{p}</RN.Text>
+                                        <RN.Text style={{ color: "#fff", fontSize: 11, fontWeight: "600" }}>{p}</RN.Text>
                                     </RN.TouchableOpacity>
                                 ))}
                             </RN.ScrollView>
@@ -376,25 +367,26 @@ export function EmojiStoreModal() {
                             </RN.View>
                         ) : (
                             <RN.FlatList
-                                key="emoji-grid-modal-6"
+                                key="emoji-grid-modal-7"
                                 data={filteredEmojis}
                                 keyExtractor={(item) => item.id}
                                 renderItem={renderEmojiItem}
-                                numColumns={6}
-                                initialNumToRender={36}
-                                maxToRenderPerBatch={24}
-                                windowSize={5}
-                                removeClippedSubviews={true}
+                                numColumns={7}
+                                initialNumToRender={42}
+                                maxToRenderPerBatch={28}
+                                windowSize={7}
+                                removeClippedSubviews={false}
                                 nestedScrollEnabled={true}
+                                showsVerticalScrollIndicator={true}
                                 keyboardShouldPersistTaps="always"
                                 style={{ flex: 1 }}
-                                contentContainerStyle={{ paddingBottom: 8 }}
+                                contentContainerStyle={{ paddingBottom: 16 }}
                             />
                         )}
                     </RN.View>
                 ) : (
-                    /* Tab 2 */
-                    <RN.View style={{ flex: 1 }}>
+                    /* Tab 2: Packs Market */
+                    <RN.View style={{ flex: 1, paddingTop: 6 }}>
                         {loadingPacks && (
                             <RN.Text style={{ color: "#aaa", textAlign: "center", marginVertical: 12, fontSize: 12 }}>
                                 Loading remote packs...
@@ -414,9 +406,10 @@ export function EmojiStoreModal() {
                             initialNumToRender={8}
                             maxToRenderPerBatch={6}
                             nestedScrollEnabled={true}
+                            showsVerticalScrollIndicator={true}
                             keyboardShouldPersistTaps="always"
                             style={{ flex: 1 }}
-                            contentContainerStyle={{ paddingBottom: 8 }}
+                            contentContainerStyle={{ paddingBottom: 16 }}
                         />
                     </RN.View>
                 )}
@@ -425,22 +418,7 @@ export function EmojiStoreModal() {
     );
 }
 
-let drawerToggleFn: ((open: boolean | ((prev: boolean) => boolean)) => void) | null = null;
-let isDrawerOpen = false;
-
-export function registerDrawerToggle(fn: ((open: boolean | ((prev: boolean) => boolean)) => void) | null) {
-    drawerToggleFn = fn;
-}
-
-export function setDrawerOpenState(open: boolean) {
-    isDrawerOpen = open;
-}
-
 export function closeEmojiModal() {
-    if (drawerToggleFn && isDrawerOpen) {
-        drawerToggleFn(false);
-        return;
-    }
     try {
         hideActionSheet();
     } catch (e) {
@@ -450,41 +428,11 @@ export function closeEmojiModal() {
 
 export function toggleEmojiStore() {
     RN.Keyboard.dismiss();
-    const activeRef = getActiveChatInputRef();
-    if (activeRef?.current) {
-        try {
-            activeRef.current.blur?.();
-        } catch {}
-    }
-
-    if (drawerToggleFn) {
-        drawerToggleFn((prev) => {
-            const next = !prev;
-            if (next) {
-                RN.Keyboard.dismiss();
-            }
-            return next;
-        });
-        logStatus("Toggled inline Emoji Drawer (dismissed keyboard)");
-        return;
-    }
     openEmojiModal();
 }
 
 export function openEmojiStore() {
     RN.Keyboard.dismiss();
-    const activeRef = getActiveChatInputRef();
-    if (activeRef?.current) {
-        try {
-            activeRef.current.blur?.();
-        } catch {}
-    }
-
-    if (drawerToggleFn) {
-        drawerToggleFn(true);
-        logStatus("Opened inline Emoji Drawer (dismissed keyboard)");
-        return;
-    }
     openEmojiModal();
 }
 
