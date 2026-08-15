@@ -5,7 +5,6 @@ import { storage } from "@vendetta/plugin";
 import { AppEmoji } from "../types";
 import {
     AuthenticationStore,
-    emojiRegex,
     getActiveApp,
     RestAPI,
     SelectedGuildStore,
@@ -18,35 +17,19 @@ function encodeMessageContent(content: string, emojis: AppEmoji[]): { text: stri
     const emojiMap = new Map(emojis.map((e) => [e.name.toLowerCase(), e]));
     let shouldProxy = false;
 
-    // 1. Replace raw Discord tags (<a:name:id> or <:name:id>)
-    let result = content.replace(/<a?:([A-Za-z0-9_]+):\d+>/g, (match, name) => {
-        const found = emojiMap.get(name.toLowerCase());
-        if (found) {
-            shouldProxy = true;
-            return `;${found.name};`;
+    // Single pass match for <a:name:id>, ;name;, or :name: (Hermes safe, no lookbehinds)
+    const result = content.replace(
+        /(<a?:([A-Za-z0-9_]+):\d+>)|;([A-Za-z0-9_]+);|:([A-Za-z0-9_]+):/g,
+        (match, fullTag, tagName, semiName, colonName) => {
+            const name = (tagName || semiName || colonName || "").toLowerCase();
+            const found = emojiMap.get(name);
+            if (found) {
+                shouldProxy = true;
+                return `;${found.name};`;
+            }
+            return match;
         }
-        return match;
-    });
-
-    // 2. Replace semicolon shortcuts (;name;)
-    result = result.replace(/;([A-Za-z0-9_]+);/g, (match, name) => {
-        const found = emojiMap.get(name.toLowerCase());
-        if (found) {
-            shouldProxy = true;
-            return `;${found.name};`;
-        }
-        return match;
-    });
-
-    // 3. Replace standalone colon shortcuts (:name:)
-    result = result.replace(/(?<!<a?):([A-Za-z0-9_]+):(?!\d+>)/g, (match, name) => {
-        const found = emojiMap.get(name.toLowerCase());
-        if (found) {
-            shouldProxy = true;
-            return `;${found.name};`;
-        }
-        return match;
-    });
+    );
 
     return { text: result, shouldProxy };
 }
@@ -88,8 +71,9 @@ export function patchMessages(): () => void {
                 if (row?.message?.content && loaded.length > 0) {
                     const emojiMap = new Map(loaded.map((e) => [e.name.toLowerCase(), e]));
                     row.message.content = row.message.content.replace(
-                        /(?<!<a?:[A-Za-z0-9_]+:\d+)(?:;([A-Za-z0-9_]+);|:([A-Za-z0-9_]+):)/g,
-                        (match: string, semi: string, colon: string) => {
+                        /(<a?:[A-Za-z0-9_]+:\d+>)|;([A-Za-z0-9_]+);|:([A-Za-z0-9_]+):/g,
+                        (match: string, fullTag: string, semi: string, colon: string) => {
+                            if (fullTag) return fullTag;
                             const name = (semi || colon || "").toLowerCase();
                             const found = emojiMap.get(name);
                             if (found) {

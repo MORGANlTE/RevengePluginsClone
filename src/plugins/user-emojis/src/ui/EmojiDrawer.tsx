@@ -27,8 +27,18 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
     React.useEffect(() => {
         registerDrawerToggle(setIsOpen);
         preloadRemotePacks();
+
+        const kbShow = RN.Keyboard.addListener("keyboardDidShow", () => {
+            setIsOpen(false);
+        });
+        const kbWillShow = RN.Keyboard.addListener("keyboardWillShow", () => {
+            setIsOpen(false);
+        });
+
         return () => {
             registerDrawerToggle(null);
+            kbShow.remove();
+            kbWillShow.remove();
         };
     }, []);
 

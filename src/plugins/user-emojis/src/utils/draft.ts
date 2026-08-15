@@ -39,25 +39,21 @@ export function transformDraftText(text: string): string {
     if (typeof text !== "string" || !list.length) return text;
     const emojiMap = new Map<string, AppEmoji>(list.map((e: AppEmoji) => [e.name.toLowerCase(), e]));
 
-    // Step 1: Replace semicolon shortcuts (;name;)
-    let result = text.replace(/;([A-Za-z0-9_]+);/g, (match, name) => {
-        const found = emojiMap.get(name.toLowerCase());
-        if (found) {
-            return `<${found.animated ? "a" : ""}:${found.name}:${found.id}>`;
+    // Match either full tags <a:name:id>, or semicolon ;name;, or colon :name: (Hermes safe, no lookbehinds)
+    return text.replace(
+        /(<a?:[A-Za-z0-9_]+:\d+>)|;([A-Za-z0-9_]+);|:([A-Za-z0-9_]+):/g,
+        (match, fullTag, semiName, colonName) => {
+            if (fullTag) {
+                return fullTag;
+            }
+            const name = (semiName || colonName || "").toLowerCase();
+            const found = emojiMap.get(name);
+            if (found) {
+                return `<${found.animated ? "a" : ""}:${found.name}:${found.id}>`;
+            }
+            return match;
         }
-        return match;
-    });
-
-    // Step 2: Replace colon shortcuts (:name:) ONLY if not already inside a Discord tag <a:name:id>
-    result = result.replace(/(?<!<a?):([A-Za-z0-9_]+):(?!\d+>)/g, (match, name) => {
-        const found = emojiMap.get(name.toLowerCase());
-        if (found) {
-            return `<${found.animated ? "a" : ""}:${found.name}:${found.id}>`;
-        }
-        return match;
-    });
-
-    return result;
+    );
 }
 
 export function insertEmojiIntoDraft(emoji: AppEmoji, customRef?: any) {
@@ -68,7 +64,7 @@ export function insertEmojiIntoDraft(emoji: AppEmoji, customRef?: any) {
     const ref = customRef || getActiveChatInputRef();
     const inputTarget = ref?.current || ref;
 
-    // Strategy 1: Active Chat Input handleTextChanged (Directly updates live text on screen)
+    // Strategy 1: Active Chat Input handleTextChanged
     if (inputTarget && typeof inputTarget.handleTextChanged === "function") {
         try {
             const currentText = typeof inputTarget.getText === "function"

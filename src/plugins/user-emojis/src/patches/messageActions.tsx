@@ -10,7 +10,7 @@ import { closeEmojiModal } from "../utils/navigation";
 export function patchMessageActions(): () => void {
     const unpatches: (() => void)[] = [];
 
-    // 1. Modern Discord Mobile: useMessageActions hook
+    // 1. Modern Discord Mobile: useMessageActions hook (Preferred)
     const messageActionsHook = findByProps("useMessageActions");
     if (messageActionsHook) {
         const fn = messageActionsHook.default ? "default" : "useMessageActions";
@@ -23,9 +23,14 @@ export function patchMessageActions(): () => void {
 
                     if (!app || matches.length === 0) return;
 
+                    const seenNames = new Set<string>();
                     matches.forEach((m) => {
                         const raw = m[0];
                         const name = m[1];
+                        const nameKey = name.toLowerCase();
+                        if (seenNames.has(nameKey)) return;
+                        seenNames.add(nameKey);
+
                         if (!res.some((item: any) => item?.label === `Steal :${name}:`)) {
                             res.push({
                                 label: `Steal :${name}:`,
@@ -45,10 +50,11 @@ export function patchMessageActions(): () => void {
                 })
             );
             logStatus("Patched modern useMessageActions hook");
+            return () => unpatches.forEach((u) => u?.());
         }
     }
 
-    // 2. ActionSheet Interceptor for Discord Mobile Message Long Press
+    // 2. Fallback: ActionSheet Interceptor ONLY when useMessageActions hook does not exist
     const LazyActionSheet = findByProps("openLazy", "hideActionSheet");
     if (LazyActionSheet?.openLazy) {
         unpatches.push(
@@ -65,6 +71,16 @@ export function patchMessageActions(): () => void {
                 const app = getActiveApp();
                 if (!app || matches.length === 0) return;
 
+                const seenNames = new Set<string>();
+                const uniqueMatches = matches.filter((m) => {
+                    const nameKey = m[1].toLowerCase();
+                    if (seenNames.has(nameKey)) return false;
+                    seenNames.add(nameKey);
+                    return true;
+                });
+
+                if (uniqueMatches.length === 0) return;
+
                 if (component && typeof component.then === "function") {
                     component.then((i: any) => {
                         const target = i?.default ? i : { default: i };
@@ -77,7 +93,7 @@ export function patchMessageActions(): () => void {
                                 };
                             }, []);
 
-                            const stealButtons = matches.map((m, idx) => {
+                            const stealButtons = uniqueMatches.map((m, idx) => {
                                 const rawTag = m[0];
                                 const name = m[1];
                                 return (
@@ -148,7 +164,7 @@ export function patchMessageActions(): () => void {
                 }
             })
         );
-        logStatus("Patched LazyActionSheet message long-press interceptor safely");
+        logStatus("Patched LazyActionSheet message long-press interceptor fallback");
     }
 
     return () => unpatches.forEach((u) => u?.());

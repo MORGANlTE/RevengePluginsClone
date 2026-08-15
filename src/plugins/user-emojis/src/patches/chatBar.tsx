@@ -4,9 +4,10 @@ import { after, before } from "@vendetta/patcher";
 import { getAssetIDByName } from "@vendetta/ui/assets";
 import { findInReactTree } from "@vendetta/utils";
 import EmojiDrawer from "../ui/EmojiDrawer";
+import EmojiPreviewBar from "../ui/EmojiPreviewBar";
 import { extractChatInputRef, setActiveChatInputRef, transformDraftText } from "../utils/draft";
 import { logStatus } from "../utils/logger";
-import { toggleEmojiStore } from "../utils/navigation";
+import { closeEmojiModal, toggleEmojiStore } from "../utils/navigation";
 
 export function patchChatBar(): () => void {
     const unpatches: (() => void)[] = [];
@@ -19,6 +20,30 @@ export function patchChatBar(): () => void {
 
         if (target && typeof target.handleTextChanged === "function" && !patchedRefs.has(target)) {
             patchedRefs.add(target);
+
+            // Auto-close emoji drawer when user clicks/focuses the chatbar
+            if (typeof target.handleFocus === "function") {
+                unpatches.push(
+                    before("handleFocus", target, () => {
+                        closeEmojiModal();
+                    })
+                );
+            }
+            if (typeof target.focus === "function") {
+                unpatches.push(
+                    before("focus", target, () => {
+                        closeEmojiModal();
+                    })
+                );
+            }
+            if (typeof target.onFocus === "function") {
+                unpatches.push(
+                    before("onFocus", target, () => {
+                        closeEmojiModal();
+                    })
+                );
+            }
+
             unpatches.push(
                 before("handleTextChanged", target, (args) => {
                     if (typeof args[0] === "string") {
@@ -29,11 +54,11 @@ export function patchChatBar(): () => void {
                     }
                 })
             );
-            logStatus("Hooked handleTextChanged for real-time chat emoji preview");
+            logStatus("Hooked handleTextChanged and onFocus for chatbar");
         }
     }
 
-    // 1. Primary ChatView Tree Patch: Mounts EmojiDrawer directly into Chat
+    // 1. Primary ChatView Tree Patch: Mounts EmojiPreviewBar and EmojiDrawer directly into Chat
     const ChatView = findByTypeName("ChatView");
     if (ChatView) {
         unpatches.push(
@@ -45,11 +70,12 @@ export function patchChatBar(): () => void {
                     React.Fragment,
                     {},
                     ret,
+                    React.createElement(EmojiPreviewBar, { inputProps: inputRef }),
                     React.createElement(EmojiDrawer, { inputProps: inputRef })
                 );
             })
         );
-        logStatus("Patched ChatView with live EmojiDrawer");
+        logStatus("Patched ChatView with EmojiPreviewBar and EmojiDrawer");
     }
 
     // 2. ChatInputGuardWrapper: Injects 💎 button & captures chatInputRef
