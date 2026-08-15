@@ -23,22 +23,14 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
     const [loadingPacks, setLoadingPacks] = React.useState(false);
 
     const emojis: AppEmoji[] = storage.emojis || [];
+    const DRAWER_HEIGHT = 380;
 
     React.useEffect(() => {
         registerDrawerToggle(setIsOpen);
         preloadRemotePacks();
 
-        const kbShow = RN.Keyboard.addListener("keyboardDidShow", () => {
-            setIsOpen(false);
-        });
-        const kbWillShow = RN.Keyboard.addListener("keyboardWillShow", () => {
-            setIsOpen(false);
-        });
-
         return () => {
             registerDrawerToggle(null);
-            kbShow.remove();
-            kbWillShow.remove();
         };
     }, []);
 
@@ -70,7 +62,7 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
     }, [emojis]);
 
     const filteredEmojis = React.useMemo(() => {
-        const q = search.toLowerCase();
+        const q = search.trim().toLowerCase();
         return emojis.filter((e) => {
             const matchesSearch = !q || e.name.toLowerCase().includes(q);
             if (!matchesSearch) return false;
@@ -90,18 +82,18 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                     onPress={() => insertEmojiIntoDraft(item, inputProps)}
                     activeOpacity={0.6}
                     style={{
-                        flex: 1 / 6,
+                        flex: 1 / 7,
                         aspectRatio: 1,
                         margin: 2,
                         alignItems: "center",
                         justifyContent: "center",
-                        backgroundColor: "rgba(255, 255, 255, 0.06)",
+                        backgroundColor: "rgba(255, 255, 255, 0.07)",
                         borderRadius: 8,
                     }}
                 >
                     <RN.Image
                         source={{ uri: url }}
-                        style={{ width: 28, height: 28 }}
+                        style={{ width: 34, height: 34 }}
                         resizeMode="contain"
                     />
                 </RN.TouchableOpacity>
@@ -129,8 +121,8 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                     style={{
                         backgroundColor: "rgba(255, 255, 255, 0.05)",
                         borderRadius: 10,
-                        padding: 8,
-                        marginBottom: 8,
+                        padding: 10,
+                        marginBottom: 10,
                         borderWidth: 1,
                         borderColor: "rgba(255, 255, 255, 0.08)",
                     }}
@@ -140,24 +132,24 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                             flexDirection: "row",
                             alignItems: "center",
                             justifyContent: "space-between",
-                            marginBottom: 6,
+                            marginBottom: 8,
                         }}
                     >
-                        <RN.View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1 }}>
+                        <RN.View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}>
                             {iconData?.url ? (
                                 <RN.Image
                                     source={{ uri: iconData.url }}
-                                    style={{ width: 28, height: 28, borderRadius: 6 }}
+                                    style={{ width: 32, height: 32, borderRadius: 6 }}
                                     resizeMode="contain"
                                 />
                             ) : (
-                                <RN.Text style={{ fontSize: 20 }}>📦</RN.Text>
+                                <RN.Text style={{ fontSize: 22 }}>📦</RN.Text>
                             )}
                             <RN.View style={{ flex: 1 }}>
-                                <RN.Text style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}>
+                                <RN.Text style={{ color: "#fff", fontSize: 13, fontWeight: "bold" }}>
                                     {pack.name.toUpperCase()}
                                 </RN.Text>
-                                <RN.Text style={{ color: "#aaa", fontSize: 10 }} numberOfLines={1}>
+                                <RN.Text style={{ color: "#aaa", fontSize: 11 }} numberOfLines={1}>
                                     {pack.description || `${emojiEntries.length} custom emojis`}
                                 </RN.Text>
                             </RN.View>
@@ -180,8 +172,8 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                             }}
                             style={{
                                 backgroundColor: isInstalled ? "#ED4245" : "#5865F2",
-                                paddingVertical: 4,
-                                paddingHorizontal: 10,
+                                paddingVertical: 5,
+                                paddingHorizontal: 12,
                                 borderRadius: 6,
                             }}
                         >
@@ -197,7 +189,7 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                             alignItems: "center",
                             gap: 4,
                             backgroundColor: "rgba(0, 0, 0, 0.25)",
-                            padding: 4,
+                            padding: 6,
                             borderRadius: 6,
                         }}
                     >
@@ -208,7 +200,7 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                                 <RN.Image
                                     key={name}
                                     source={{ uri: parsed.url }}
-                                    style={{ width: 20, height: 20 }}
+                                    style={{ width: 22, height: 22 }}
                                     resizeMode="contain"
                                 />
                             );
@@ -237,8 +229,8 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
     return (
         <RN.View
             style={{
-                height: 270,
-                maxHeight: 270,
+                height: DRAWER_HEIGHT,
+                maxHeight: DRAWER_HEIGHT,
                 backgroundColor: "#1e1f22",
                 borderTopWidth: 1,
                 borderTopColor: "rgba(255, 255, 255, 0.12)",
@@ -254,12 +246,12 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                     flexDirection: "row",
                     alignItems: "center",
                     justifyContent: "space-between",
-                    paddingBottom: 4,
+                    paddingBottom: 6,
                     borderBottomWidth: 1,
                     borderBottomColor: "rgba(255, 255, 255, 0.08)",
                 }}
             >
-                <RN.Text style={{ color: "#aaa", fontSize: 11, fontWeight: "600" }}>
+                <RN.Text style={{ color: "#aaa", fontSize: 12, fontWeight: "bold" }}>
                     💎 Custom Emojis ({emojis.length})
                 </RN.Text>
 
@@ -267,13 +259,13 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                     <RN.TouchableOpacity
                         onPress={() => syncEmojisFromBot(true)}
                         style={{
-                            paddingVertical: 2,
-                            paddingHorizontal: 6,
+                            paddingVertical: 3,
+                            paddingHorizontal: 8,
                             backgroundColor: "rgba(88, 101, 242, 0.2)",
-                            borderRadius: 4,
+                            borderRadius: 6,
                         }}
                     >
-                        <RN.Text style={{ color: "#5865F2", fontSize: 10, fontWeight: "bold" }}>
+                        <RN.Text style={{ color: "#5865F2", fontSize: 11, fontWeight: "bold" }}>
                             🔄 Resync
                         </RN.Text>
                     </RN.TouchableOpacity>
@@ -281,30 +273,30 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                     <RN.TouchableOpacity
                         onPress={() => setIsOpen(false)}
                         style={{
-                            paddingHorizontal: 6,
-                            paddingVertical: 2,
-                            borderRadius: 4,
+                            paddingHorizontal: 8,
+                            paddingVertical: 3,
+                            borderRadius: 6,
                             backgroundColor: "rgba(255, 255, 255, 0.08)",
                         }}
                     >
-                        <RN.Text style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}>✕</RN.Text>
+                        <RN.Text style={{ color: "#fff", fontSize: 13, fontWeight: "bold" }}>✕</RN.Text>
                     </RN.TouchableOpacity>
                 </RN.View>
             </RN.View>
 
             {/* Tab Switcher */}
-            <RN.View style={{ flexDirection: "row", paddingVertical: 4, gap: 6 }}>
+            <RN.View style={{ flexDirection: "row", paddingVertical: 6, gap: 6 }}>
                 <RN.TouchableOpacity
                     onPress={() => setTab("emojis")}
                     style={{
                         flex: 1,
-                        paddingVertical: 4,
+                        paddingVertical: 6,
                         alignItems: "center",
                         backgroundColor: tab === "emojis" ? "#5865F2" : "rgba(255, 255, 255, 0.06)",
                         borderRadius: 6,
                     }}
                 >
-                    <RN.Text style={{ color: "#fff", fontSize: 11, fontWeight: "bold" }}>
+                    <RN.Text style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}>
                         Local Emojis
                     </RN.Text>
                 </RN.TouchableOpacity>
@@ -312,13 +304,13 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                     onPress={() => setTab("market")}
                     style={{
                         flex: 1,
-                        paddingVertical: 4,
+                        paddingVertical: 6,
                         alignItems: "center",
                         backgroundColor: tab === "market" ? "#5865F2" : "rgba(255, 255, 255, 0.06)",
                         borderRadius: 6,
                     }}
                 >
-                    <RN.Text style={{ color: "#fff", fontSize: 11, fontWeight: "bold" }}>
+                    <RN.Text style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}>
                         Packs Market
                     </RN.Text>
                 </RN.TouchableOpacity>
@@ -331,15 +323,15 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                         value={search}
                         placeholder="Search emojis..."
                         placeholderTextColor="#888"
-                        onChangeText={setSearch}
+                        onChangeText={(txt: string) => setSearch(txt)}
                         style={{
                             backgroundColor: "rgba(0, 0, 0, 0.35)",
                             color: "#fff",
-                            paddingHorizontal: 8,
-                            paddingVertical: 3,
+                            paddingHorizontal: 10,
+                            paddingVertical: 6,
                             borderRadius: 6,
-                            fontSize: 12,
-                            marginBottom: 4,
+                            fontSize: 13,
+                            marginBottom: 6,
                         }}
                     />
 
@@ -347,7 +339,8 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                         <RN.ScrollView
                             horizontal
                             showsHorizontalScrollIndicator={false}
-                            style={{ maxHeight: 24, marginBottom: 4 }}
+                            nestedScrollEnabled={true}
+                            style={{ maxHeight: 28, marginBottom: 6 }}
                             contentContainerStyle={{ alignItems: "center" }}
                         >
                             {packs.map((p) => (
@@ -355,15 +348,15 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                                     key={p}
                                     onPress={() => setSelectedPack(p)}
                                     style={{
-                                        paddingHorizontal: 6,
-                                        paddingVertical: 2,
+                                        paddingHorizontal: 8,
+                                        paddingVertical: 3,
                                         backgroundColor:
                                             selectedPack === p ? "#5865F2" : "rgba(255, 255, 255, 0.08)",
                                         borderRadius: 6,
                                         marginRight: 4,
                                     }}
                                 >
-                                    <RN.Text style={{ color: "#fff", fontSize: 10 }}>{p}</RN.Text>
+                                    <RN.Text style={{ color: "#fff", fontSize: 11 }}>{p}</RN.Text>
                                 </RN.TouchableOpacity>
                             ))}
                         </RN.ScrollView>
@@ -371,7 +364,7 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
 
                     {filteredEmojis.length === 0 ? (
                         <RN.View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-                            <RN.Text style={{ color: "#888", fontSize: 11 }}>
+                            <RN.Text style={{ color: "#888", fontSize: 12 }}>
                                 {emojis.length === 0
                                     ? "No emojis cached. Tap Resync to fetch from bot!"
                                     : "No emojis match your search."}
@@ -379,18 +372,19 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                         </RN.View>
                     ) : (
                         <RN.FlatList
-                            key="emoji-grid-cols-6"
+                            key="emoji-grid-cols-7"
                             data={filteredEmojis}
                             keyExtractor={(item) => item.id}
                             renderItem={renderEmojiItem}
-                            numColumns={6}
-                            initialNumToRender={36}
-                            maxToRenderPerBatch={24}
+                            numColumns={7}
+                            initialNumToRender={42}
+                            maxToRenderPerBatch={28}
                             windowSize={5}
                             removeClippedSubviews={true}
+                            nestedScrollEnabled={true}
                             keyboardShouldPersistTaps="always"
                             style={{ flex: 1 }}
-                            contentContainerStyle={{ paddingBottom: 4 }}
+                            contentContainerStyle={{ paddingBottom: 6 }}
                         />
                     )}
                 </RN.View>
@@ -398,12 +392,12 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                 /* Tab 2: Packs Market */
                 <RN.View style={{ flex: 1 }}>
                     {loadingPacks && (
-                        <RN.Text style={{ color: "#aaa", textAlign: "center", marginVertical: 8, fontSize: 11 }}>
+                        <RN.Text style={{ color: "#aaa", textAlign: "center", marginVertical: 12, fontSize: 12 }}>
                             Loading remote packs...
                         </RN.Text>
                     )}
                     {!loadingPacks && remotePacks.length === 0 && (
-                        <RN.Text style={{ color: "#aaa", textAlign: "center", marginVertical: 8, fontSize: 11 }}>
+                        <RN.Text style={{ color: "#aaa", textAlign: "center", marginVertical: 12, fontSize: 12 }}>
                             No remote packs found.
                         </RN.Text>
                     )}
@@ -415,9 +409,10 @@ export default function EmojiDrawer({ inputProps }: { inputProps?: any }) {
                         numColumns={1}
                         initialNumToRender={8}
                         maxToRenderPerBatch={6}
+                        nestedScrollEnabled={true}
                         keyboardShouldPersistTaps="always"
                         style={{ flex: 1 }}
-                        contentContainerStyle={{ paddingBottom: 4 }}
+                        contentContainerStyle={{ paddingBottom: 6 }}
                     />
                 </RN.View>
             )}
